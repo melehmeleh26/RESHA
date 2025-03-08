@@ -1,6 +1,16 @@
 
 // Background script for the GroupsFlow Chrome Extension
 
+// Listen for installation events
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('GroupsFlow extension installed');
+});
+
+// Open extension in a new tab when the extension icon is clicked
+chrome.action.onClicked.addListener(() => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('index.html') });
+});
+
 // Handle messages from the popup or content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);
@@ -29,6 +39,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     
     // Return true to indicate we'll respond asynchronously
+    return true;
+  }
+
+  // Handle page navigation to create a new post
+  if (message.type === 'CREATE_POST') {
+    chrome.tabs.create({ 
+      url: "https://www.facebook.com/groups/" + message.data.groupId + "/buy_sell_discussion" 
+    }, (tab) => {
+      // Wait for page to load before sending create post message
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: () => {
+          // Message will be picked up by content script
+          chrome.runtime.sendMessage({ 
+            type: 'FILL_POST_FORM', 
+            data: message.data 
+          });
+        }
+      });
+    });
     return true;
   }
 });

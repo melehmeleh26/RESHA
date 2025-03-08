@@ -23,9 +23,20 @@ export default defineConfig({
         content: path.resolve(__dirname, 'public/js/content.js')
       },
       output: {
-        entryFileNames: `js/[name].js`,
-        chunkFileNames: `js/[name].js`,
-        assetFileNames: `assets/[name].[ext]`
+        entryFileNames: (assetInfo) => {
+          return assetInfo.name === 'background' || assetInfo.name === 'content'
+            ? 'js/[name].js'
+            : 'js/[name]-[hash].js';
+        },
+        chunkFileNames: 'js/[name]-[hash].js',
+        assetFileNames: (assetInfo) => {
+          const info = assetInfo.name.split('.');
+          const ext = info[info.length - 1];
+          if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(ext)) {
+            return `icons/[name][extname]`;
+          }
+          return `assets/[name]-[hash][extname]`;
+        }
       }
     },
     emptyOutDir: true,
