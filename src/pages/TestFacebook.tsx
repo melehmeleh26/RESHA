@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
-import { ListFilter, RefreshCw, UserCheck, ImagePlus, Clock, Calendar, Timer } from "lucide-react";
+import { ListFilter, RefreshCw, UserCheck, ImagePlus, Clock, Calendar, Timer, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const TestFacebook = () => {
   const { 
@@ -35,6 +36,7 @@ const TestFacebook = () => {
   const [imageUpload, setImageUpload] = useState<boolean>(false);
   const [scheduledPost, setScheduledPost] = useState<boolean>(false);
   const [postSchedule, setPostSchedule] = useState<string>("now");
+  const [refreshAttempted, setRefreshAttempted] = useState(false);
 
   // Check connection on mount
   useEffect(() => {
@@ -42,6 +44,13 @@ const TestFacebook = () => {
       checkFacebookConnection();
     }
   }, [isExtension]);
+
+  // Set a default group if we have groups and none is selected
+  useEffect(() => {
+    if (availableGroups.length > 0 && !selectedGroupId) {
+      setSelectedGroupId(availableGroups[0].id);
+    }
+  }, [availableGroups, selectedGroupId]);
 
   const handleTestPost = async () => {
     if (!testPostContent) {
@@ -101,32 +110,60 @@ const TestFacebook = () => {
 
   const handleRefreshGroups = () => {
     setIsFetching(true);
+    setRefreshAttempted(true);
     addLogEntry('רענון ידני', 'info', 'המשתמש ביקש לרענן את רשימת הקבוצות');
     
-    fetchUserGroups();
-    checkFacebookConnection();
+    // Force a refresh of the connection status and groups
+    console.log("Manual refresh requested");
+    
+    // First check if we're in a Facebook tab
+    chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
+      if (tabs.length > 0) {
+        console.log("Found active Facebook tab:", tabs[0].url);
+        // We have an active Facebook tab, let's try to get data from it
+        if (tabs[0].id) {
+          chrome.tabs.sendMessage(tabs[0].id, { 
+            type: 'FORCE_GROUP_SCAN',
+            urgent: true
+          });
+        }
+      } else {
+        console.log("No active Facebook tab, asking background script to find or create one");
+        // No active Facebook tab, ask the background script to find or create one
+        chrome.runtime.sendMessage({ 
+          type: 'FORCE_FETCH_GROUPS',
+          createTabIfNeeded: true
+        });
+      }
+    });
     
     toast({
       title: "רענון קבוצות",
       description: "מנסה לטעון את רשימת הקבוצות..."
     });
     
-    // Set a timeout to show loading state and then clear it
+    // Set a timeout to wait for group data to be returned
     setTimeout(() => {
-      setIsFetching(false);
+      fetchUserGroups();
+      checkFacebookConnection();
       
-      if (availableGroups.length === 0) {
-        toast({
-          title: "לא נמצאו קבוצות",
-          description: "נסה לפתוח את פייסבוק בטאב אחר ולגשת לאחת הקבוצות שלך",
-          variant: "destructive"
-        });
-      } else {
-        toast({
-          title: "קבוצות נטענו בהצלחה",
-          description: `נמצאו ${availableGroups.length} קבוצות זמינות`
-        });
-      }
+      setTimeout(() => {
+        setIsFetching(false);
+        
+        // Check if we have groups after the refresh
+        if (availableGroups.length === 0) {
+          toast({
+            title: "לא נמצאו קבוצות",
+            description: "נסה לפתוח את פייסבוק בטאב אחר ולגשת לאחת הקבוצות שלך",
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: "קבוצות נטענו בהצלחה",
+            description: `נמצאו ${availableGroups.length} קבוצות זמינות`
+          });
+        }
+      }, 2000);
     }, 3000);
   };
 
@@ -137,6 +174,39 @@ const TestFacebook = () => {
         <h1 className="text-3xl font-bold">בדיקות פרסום</h1>
         <p className="mt-2 text-muted-foreground">בדיקת פרסום אוטומטי בקבוצות פייסבוק</p>
       </div>
+
+      {refreshAttempted && availableGroups.length === 0 && (
+        <Alert variant="destructive" className="animate-fade-in">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>לא ניתן לטעון קבוצות</AlertTitle>
+          <AlertDescription>
+            <div className="space-y-2">
+              <p>וודא כי:</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>אתה מחובר לחשבון הפייסבוק שלך</li>
+                <li>יש לך הרשאות גישה לקבוצות</li>
+                <li>יש לך לשונית פייסבוק פתוחה</li>
+                <li>אתה בדף של אחת מהקבוצות שלך</li>
+              </ol>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-2"
+                onClick={() => {
+                  // Open Facebook groups page in a new tab
+                  chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/" });
+                  toast({
+                    title: "נפתח עמוד קבוצות",
+                    description: "עמוד הקבוצות של פייסבוק נפתח בלשונית חדשה"
+                  });
+                }}
+              >
+                פתח קבוצות פייסבוק
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full animate-fade-in animate-delay-100">
         <TabsList className="grid w-full grid-cols-2">
@@ -462,6 +532,7 @@ const TestFacebook = () => {
           <ol className="list-decimal list-inside space-y-2 text-sm">
             <li>וודא שהתוסף מותקן ופעיל (אייקון GroupsFlow בסרגל התוספים)</li>
             <li>לחץ על "רענן מצב וקבוצות" כדי לקבל את רשימת הקבוצות הזמינות</li>
+            <li>וודא שיש לך לשונית פייסבוק פתוחה ושאתה נמצא בקבוצה</li>
             <li>בחר את הקבוצה בה תרצה לבצע את הבדיקה</li>
             <li>בחר את מצב הבדיקה - מילוי בלבד או פרסום מלא</li>
             <li>הזן את תוכן הפוסט לבדיקה</li>

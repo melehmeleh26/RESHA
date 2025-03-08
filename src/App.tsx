@@ -24,11 +24,12 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          {/* Redirect from extension page to dashboard */}
-          <Route path="/index.html" element={<Navigate to="/" replace />} />
+          {/* Redirect from extension page and root to dashboard */}
+          <Route path="/index.html" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
           
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="templates" element={<Templates />} />
             <Route path="groups" element={<Groups />} />
             <Route path="scheduler" element={<Scheduler />} />

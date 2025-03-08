@@ -273,7 +273,7 @@ export const useChromeExtension = () => {
     setIsLoading(true);
     addLogEntry('בדיקת חיבור', 'info', 'בודק סטטוס חיבור לפייסבוק');
     
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.query({ active: true }, (tabs) => {
       if (tabs.length > 0 && tabs[0].id) {
         // Fixed the TypeScript error by properly specifying the object structure
         chrome.tabs.sendMessage(tabs[0].id, { type: 'CHECK_GROUP_STATUS' });
