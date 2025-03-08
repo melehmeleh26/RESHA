@@ -1,6 +1,19 @@
 
 import { useState, useEffect } from 'react';
 
+// Define types for the extension responses
+interface FacebookStatus {
+  inFacebookGroup: boolean;
+  url: string;
+}
+
+interface TestPostResponse {
+  success: boolean;
+  message?: string;
+  result?: any;
+  error?: string;
+}
+
 // Check if running in a Chrome extension environment
 const isChromeExtension = () => {
   return typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
@@ -9,7 +22,7 @@ const isChromeExtension = () => {
 // Hook for Chrome extension functionality
 export const useChromeExtension = () => {
   const [isExtension, setIsExtension] = useState(false);
-  const [facebookStatus, setFacebookStatus] = useState({
+  const [facebookStatus, setFacebookStatus] = useState<FacebookStatus>({
     inFacebookGroup: false,
     url: ''
   });
@@ -53,7 +66,7 @@ export const useChromeExtension = () => {
   }, []);
 
   // Function to send a test post request
-  const sendTestPost = async (postData: any) => {
+  const sendTestPost = async (postData: any): Promise<TestPostResponse> => {
     if (!isExtension) {
       console.error('Cannot send test post: Not running as Chrome extension');
       return { success: false, message: 'Not running as Chrome extension' };
@@ -62,8 +75,8 @@ export const useChromeExtension = () => {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
         { type: 'TEST_POST', data: postData },
-        (response) => {
-          resolve(response);
+        (response: TestPostResponse) => {
+          resolve(response || { success: false, message: 'No response from extension' });
         }
       );
     });

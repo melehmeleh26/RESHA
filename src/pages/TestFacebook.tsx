@@ -4,10 +4,15 @@ import { useChromeExtension } from "@/hooks/use-chrome-extension";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
+
+// Define types for the test post response
+interface TestPostResult {
+  success: boolean;
+  message?: string;
+}
 
 const TestFacebook = () => {
   const { isExtension, facebookStatus, sendTestPost } = useChromeExtension();
