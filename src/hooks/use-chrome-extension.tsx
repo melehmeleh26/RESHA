@@ -82,8 +82,16 @@ export const useChromeExtension = () => {
         );
       } else if (message.type === 'FACEBOOK_GROUPS_LIST') {
         if (message.data && Array.isArray(message.data.groups)) {
-          setAvailableGroups(message.data.groups);
-          addLogEntry('Groups Fetched', 'info', `Found ${message.data.groups.length} Facebook groups`);
+          // Ensure data is properly typed before setting
+          const typedGroups: FacebookGroup[] = message.data.groups.map((group: any) => ({
+            id: group.id || '',
+            name: group.name || '',
+            url: group.url || '',
+            status: group.status || 'inactive',
+            lastChecked: group.lastChecked || new Date().toISOString()
+          }));
+          setAvailableGroups(typedGroups);
+          addLogEntry('Groups Fetched', 'info', `Found ${typedGroups.length} Facebook groups`);
         }
       }
     };
@@ -114,8 +122,10 @@ export const useChromeExtension = () => {
         setFacebookGroupsStatus(response.status);
         
         // Convert the object to an array for easier rendering
-        const groupsArray = Object.values(response.status);
-        setAvailableGroups(groupsArray);
+        if (response.status) {
+          const groupsArray = Object.values(response.status) as FacebookGroup[];
+          setAvailableGroups(groupsArray);
+        }
       }
     });
 
@@ -139,17 +149,48 @@ export const useChromeExtension = () => {
   const fetchUserGroups = () => {
     if (!isExtension) {
       console.error('Cannot fetch groups: Not running as Chrome extension');
+      addLogEntry('Fetch Groups Error', 'error', 'Not running as Chrome extension');
       return;
     }
     
+    setIsLoading(true);
     addLogEntry('Fetching Groups', 'info', 'Requesting Facebook groups list');
     
+    console.log('Sending FETCH_FACEBOOK_GROUPS message to background script');
+    
+    // Message the background script to fetch groups
     chrome.runtime.sendMessage({ type: 'FETCH_FACEBOOK_GROUPS' }, (response) => {
+      setIsLoading(false);
+      
+      console.log('Received response from FETCH_FACEBOOK_GROUPS:', response);
+      
       if (response && response.success && response.groups) {
-        setAvailableGroups(response.groups);
-        addLogEntry('Groups Fetched', 'success', `Retrieved ${response.groups.length} Facebook groups`);
+        // Ensure data is properly typed before setting
+        const typedGroups: FacebookGroup[] = response.groups.map((group: any) => ({
+          id: group.id || '',
+          name: group.name || '',
+          url: group.url || '',
+          status: group.status || 'inactive',
+          lastChecked: group.lastChecked || new Date().toISOString()
+        }));
+        
+        setAvailableGroups(typedGroups);
+        addLogEntry('Groups Fetched', 'success', `Retrieved ${typedGroups.length} Facebook groups`);
       } else {
         addLogEntry('Groups Fetch Failed', 'error', response?.error || 'Failed to fetch Facebook groups');
+        
+        // If we don't have groups from the API, let's attempt to check if there are any active Facebook tabs
+        chrome.tabs.query({ url: "*://*.facebook.com/groups/*" }, (tabs) => {
+          if (tabs.length > 0) {
+            // We have Facebook group tabs open - try to get data from there
+            tabs.forEach(tab => {
+              if (tab.id) {
+                chrome.tabs.sendMessage(tab.id, { type: 'GET_GROUP_INFO' });
+              }
+            });
+            addLogEntry('Attempting Alternate Group Detection', 'info', `Found ${tabs.length} Facebook group tabs`);
+          }
+        });
       }
     });
   };
@@ -229,6 +270,7 @@ export const useChromeExtension = () => {
   const checkFacebookConnection = () => {
     if (!isExtension) return;
     
+    setIsLoading(true);
     addLogEntry('Connection Check', 'info', 'Checking Facebook connection status');
     
     chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
@@ -258,6 +300,7 @@ export const useChromeExtension = () => {
     
     // Also refresh the groups list
     fetchUserGroups();
+    setIsLoading(false);
   };
 
   // Clear logs

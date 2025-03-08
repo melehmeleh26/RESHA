@@ -28,6 +28,32 @@ const waitForElement = (selector, timeout = 10000) => {
   });
 };
 
+// Extract Facebook group data from the current page
+const extractGroupData = () => {
+  try {
+    // Try to get group info
+    const groupNameElement = document.querySelector('h1, [role="heading"]');
+    const groupName = groupNameElement ? groupNameElement.textContent : 'Unknown Group';
+    
+    // Extract group ID from URL
+    const url = window.location.href;
+    const groupIdMatch = url.match(/groups\/([^\/]+)/);
+    const groupId = groupIdMatch ? groupIdMatch[1] : '';
+    
+    // Return extracted data
+    return {
+      id: groupId,
+      name: groupName,
+      url: url,
+      status: 'active',
+      lastChecked: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error extracting group data:', error);
+    return null;
+  }
+};
+
 // Check if we're in a Facebook group
 const checkFacebookGroupStatus = () => {
   const url = window.location.href;
@@ -38,49 +64,41 @@ const checkFacebookGroupStatus = () => {
   
   if (inFacebookGroup) {
     // Try to get group info
-    const groupNameElement = document.querySelector('h1, [role="heading"]');
-    const groupName = groupNameElement ? groupNameElement.textContent : 'Unknown Group';
+    const extractedData = extractGroupData();
     
-    // Extract group ID from URL
-    const groupIdMatch = url.match(/groups\/([^\/]+)/);
-    const groupId = groupIdMatch ? groupIdMatch[1] : '';
-    
-    groupData = {
-      id: groupId,
-      name: groupName,
-      url: url
-    };
-    
-    // Store group data for future use
-    if (groupId) {
+    if (extractedData) {
+      groupData = extractedData;
+      
+      // Store group data for future use
       chrome.storage.local.get('facebookGroups', (data) => {
         const groups = data.facebookGroups || [];
         
         // Check if group already exists
-        const existingGroupIndex = groups.findIndex(g => g.id === groupId);
+        const existingGroupIndex = groups.findIndex(g => g.id === extractedData.id);
         
         if (existingGroupIndex === -1) {
           // Add new group
-          groups.push({
-            id: groupId,
-            name: groupName,
-            url: url,
-            status: 'active',
-            lastVisited: new Date().toISOString()
-          });
+          groups.push(extractedData);
         } else {
           // Update existing group
           groups[existingGroupIndex] = {
             ...groups[existingGroupIndex],
-            name: groupName,
-            url: url,
+            name: extractedData.name,
+            url: extractedData.url,
             status: 'active',
             lastVisited: new Date().toISOString()
           };
         }
         
         // Save updated groups list
-        chrome.storage.local.set({ facebookGroups: groups });
+        chrome.storage.local.set({ facebookGroups: groups }, () => {
+          console.log('Saved group data to storage:', groups);
+          // Notify the extension that we've updated groups
+          chrome.runtime.sendMessage({
+            type: 'FACEBOOK_GROUPS_LIST',
+            data: { groups }
+          });
+        });
       });
     }
   }
@@ -98,6 +116,22 @@ const checkFacebookGroupStatus = () => {
   return { inFacebookGroup, url, ...groupData };
 };
 
+// Get all user's Facebook groups
+const getAllFacebookGroups = () => {
+  // Try to extract user's groups from the page or use stored ones
+  chrome.storage.local.get('facebookGroups', (data) => {
+    const groups = data.facebookGroups || [];
+    
+    // Send available groups to extension
+    chrome.runtime.sendMessage({
+      type: 'FACEBOOK_GROUPS_LIST',
+      data: { groups }
+    });
+    
+    console.log('Sent groups list to extension:', groups);
+  });
+};
+
 // Handle requests to fill a post in the group
 const fillPostForm = async (content) => {
   try {
@@ -112,7 +146,9 @@ const fillPostForm = async (content) => {
       'div[role="button"]:not([aria-hidden="true"]):not([aria-disabled="true"]):not([data-visualcompletion]):not([aria-haspopup])',
       'div[aria-label="Create Post"]',
       'div[aria-label="Write Post"]',
-      'div[role="button"][tabindex="0"]:not([aria-hidden="true"])'
+      'div[role="button"][tabindex="0"]:not([aria-hidden="true"])',
+      '[aria-label="Create post"]',
+      '[data-testid="creation_composer_post_button"]'
     ];
     
     let postArea = null;
@@ -171,6 +207,8 @@ const submitPost = async () => {
       'div[aria-label="Post"][role="button"]',
       'div[aria-label="פרסם"][role="button"]',
       'button[type="submit"]',
+      '[data-testid="post-button"]',
+      'div[aria-label="פוסט"]',
       'button:not([aria-hidden="true"]):not([aria-disabled="true"]) span:contains("Post")',
       'button:not([aria-hidden="true"]):not([aria-disabled="true"]) span:contains("פרסם")'
     ];
@@ -231,6 +269,15 @@ const handleTestPost = async (postData) => {
   return fillResult;
 };
 
+// Navigate to specific Facebook group
+const navigateToGroup = async (groupId) => {
+  if (groupId) {
+    window.location.href = `https://www.facebook.com/groups/${groupId}`;
+    return { success: true, message: 'Navigating to group' };
+  }
+  return { success: false, message: 'No group ID provided' };
+};
+
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Content script received message:', message);
@@ -258,6 +305,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   
+  if (message.type === 'GET_GROUP_INFO') {
+    // Extract and return current group info
+    const groupData = extractGroupData();
+    sendResponse({ success: true, data: groupData });
+    return true;
+  }
+  
   if (message.type === 'FILL_POST_FORM') {
     // Fill the post form and optionally submit
     handleTestPost(message.data).then(result => {
@@ -272,7 +326,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     return true;
   }
+  
+  if (message.type === 'NAVIGATE_TO_GROUP') {
+    // Navigate to specific group
+    navigateToGroup(message.data.groupId).then(result => {
+      sendResponse(result);
+    }).catch(error => {
+      sendResponse({
+        success: false,
+        message: 'אירעה שגיאה בעת ניסיון ניווט לקבוצה',
+        error: error.message
+      });
+    });
+    
+    return true;
+  }
 });
+
+// Modify the background script to better handle group fetching:
 
 // Run initial check
 checkFacebookGroupStatus();

@@ -22,11 +22,12 @@ const TestFacebook = () => {
     addLogEntry, 
     checkFacebookConnection, 
     availableGroups, 
-    fetchUserGroups 
+    fetchUserGroups,
+    isLoading
   } = useChromeExtension();
   const [testPostContent, setTestPostContent] = useState("");
   const [testMode, setTestMode] = useState("fill"); // "fill" or "post"
-  const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const [closeTabAfterPost, setCloseTabAfterPost] = useState(true);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("");
 
@@ -58,7 +59,7 @@ const TestFacebook = () => {
       return;
     }
 
-    setIsLoading(true);
+    setIsFetching(true);
     
     try {
       const result = await sendTestPost({
@@ -89,8 +90,39 @@ const TestFacebook = () => {
       console.error("Error running test post:", error);
       addLogEntry('Test Post Exception', 'error', `שגיאה לא צפויה: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setIsLoading(false);
+      setIsFetching(false);
     }
+  };
+
+  const handleRefreshGroups = () => {
+    setIsFetching(true);
+    addLogEntry('Manual Refresh', 'info', 'המשתמש ביקש לרענן את רשימת הקבוצות');
+    
+    fetchUserGroups();
+    checkFacebookConnection();
+    
+    toast({
+      title: "רענון קבוצות",
+      description: "מנסה לטעון את רשימת הקבוצות..."
+    });
+    
+    // Set a timeout to show loading state and then clear it
+    setTimeout(() => {
+      setIsFetching(false);
+      
+      if (availableGroups.length === 0) {
+        toast({
+          title: "לא נמצאו קבוצות",
+          description: "נסה לפתוח את פייסבוק בטאב אחר ולגשת לאחת הקבוצות שלך",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "קבוצות נטענו בהצלחה",
+          description: `נמצאו ${availableGroups.length} קבוצות זמינות`
+        });
+      }
+    }, 3000);
   };
 
   return (
@@ -148,13 +180,11 @@ const TestFacebook = () => {
               <div className="flex justify-between mt-4">
                 <Button 
                   variant="outline" 
-                  onClick={() => {
-                    checkFacebookConnection();
-                    fetchUserGroups();
-                  }} 
+                  onClick={handleRefreshGroups}
                   size="sm"
+                  disabled={isFetching || isLoading}
                 >
-                  <RefreshCw className="ml-2 h-4 w-4" />
+                  <RefreshCw className={`ml-2 h-4 w-4 ${(isFetching || isLoading) ? "animate-spin" : ""}`} />
                   רענן מצב וקבוצות
                 </Button>
                 <Button variant="outline" size="sm" asChild>
@@ -194,7 +224,7 @@ const TestFacebook = () => {
                             <p className="font-medium text-sm">{group.name}</p>
                             <p className="text-xs text-muted-foreground truncate">{group.url}</p>
                           </div>
-                          <Badge variant={group.status === 'active' ? 'success' : 'outline'}>
+                          <Badge variant={group.status === 'active' ? 'default' : 'outline'}>
                             {group.status === 'active' ? 'פעיל' : 'לא פעיל'}
                           </Badge>
                         </div>
@@ -205,9 +235,10 @@ const TestFacebook = () => {
                     variant="outline" 
                     className="w-full" 
                     size="sm" 
-                    onClick={fetchUserGroups}
+                    onClick={handleRefreshGroups}
+                    disabled={isFetching || isLoading}
                   >
-                    <ListFilter className="ml-2 h-4 w-4" />
+                    <ListFilter className={`ml-2 h-4 w-4 ${(isFetching || isLoading) ? "animate-spin" : ""}`} />
                     רענן רשימת קבוצות
                   </Button>
                 </div>
@@ -265,10 +296,10 @@ const TestFacebook = () => {
           <CardFooter>
             <Button 
               onClick={handleTestPost} 
-              disabled={!isExtension || isLoading || !selectedGroupId}
+              disabled={!isExtension || isFetching || isLoading || !selectedGroupId}
               className="w-full"
             >
-              {isLoading ? "מבצע בדיקה..." : "הרץ בדיקה"}
+              {isFetching || isLoading ? "מבצע בדיקה..." : "הרץ בדיקה"}
             </Button>
           </CardFooter>
         </Card>
