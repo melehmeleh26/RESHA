@@ -1,34 +1,42 @@
 
-// Background script for GroupsFlow
-console.log('GroupsFlow Background Script Loaded');
+// Background script for the GroupsFlow Chrome Extension
 
-// Listen for messages from the popup or content scripts
+// Handle messages from the popup or content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Background script received message:', message);
-  
+
+  // Handle test post requests from the popup
   if (message.type === 'TEST_POST') {
-    console.log('Initiating test post for:', message.data);
-    
-    // Forward the message to the content script in the active Facebook tab
+    // Forward the test post request to the active tab with Facebook open
     chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
-      if (tabs.length > 0) {
-        chrome.tabs.sendMessage(tabs[0].id, { 
-          type: 'EXECUTE_TEST_POST',
-          data: message.data
+      if (tabs.length === 0) {
+        sendResponse({ 
+          success: false, 
+          message: 'לא נמצא דף פייסבוק פעיל. אנא פתח קבוצת פייסבוק בלשונית פעילה.' 
         });
-        sendResponse({ success: true, message: 'Test initiated on Facebook tab' });
-      } else {
-        sendResponse({ success: false, message: 'No active Facebook tab found' });
+        return;
       }
+      
+      // Forward message to content script in the Facebook tab
+      chrome.tabs.sendMessage(tabs[0].id, message, (response) => {
+        console.log('Received response from content script:', response);
+        // Forward response back to the sender
+        sendResponse(response || { 
+          success: false, 
+          message: 'לא התקבלה תגובה מהתוסף בדף הפייסבוק' 
+        });
+      });
     });
     
-    return true; // Indicate async response
+    // Return true to indicate we'll respond asynchronously
+    return true;
   }
 });
 
-// Track Facebook navigation for potential testing opportunities
+// Listen for tab updates to detect when user navigates to Facebook groups
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('facebook.com')) {
-    chrome.tabs.sendMessage(tabId, { type: 'PAGE_UPDATED', url: tab.url });
+  if (changeInfo.status === 'complete' && tab.url && tab.url.includes('facebook.com/groups')) {
+    // Send message to content script to check the Facebook group status
+    chrome.tabs.sendMessage(tabId, { type: 'CHECK_GROUP_STATUS' });
   }
 });

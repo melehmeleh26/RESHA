@@ -26,6 +26,7 @@ export const useChromeExtension = () => {
     inFacebookGroup: false,
     url: ''
   });
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     // Check if we're running as an extension
@@ -56,6 +57,11 @@ export const useChromeExtension = () => {
           inFacebookGroup: url.includes('/groups/'),
           url
         });
+        
+        // Send a message to the content script to check the status
+        if (tabs[0].id) {
+          chrome.tabs.sendMessage(tabs[0].id, { type: 'CHECK_GROUP_STATUS' });
+        }
       }
     });
 
@@ -72,19 +78,49 @@ export const useChromeExtension = () => {
       return { success: false, message: 'Not running as Chrome extension' };
     }
 
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: 'TEST_POST', data: postData },
-        (response: TestPostResponse) => {
-          resolve(response || { success: false, message: 'No response from extension' });
-        }
-      );
+    setIsLoading(true);
+
+    try {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { type: 'TEST_POST', data: postData },
+          (response: TestPostResponse) => {
+            setIsLoading(false);
+            resolve(response || { success: false, message: 'No response from extension' });
+          }
+        );
+      });
+    } catch (error) {
+      setIsLoading(false);
+      return { 
+        success: false, 
+        message: 'Error sending test post', 
+        error: error instanceof Error ? error.message : String(error) 
+      };
+    }
+  };
+
+  // Check if currently connected to a Facebook group
+  const checkFacebookConnection = () => {
+    if (!isExtension) return;
+    
+    chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
+      if (tabs.length > 0 && tabs[0].id) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'CHECK_GROUP_STATUS' });
+      } else {
+        setFacebookStatus({
+          inFacebookGroup: false,
+          url: ''
+        });
+      }
     });
   };
 
   return {
     isExtension,
     facebookStatus,
-    sendTestPost
+    sendTestPost,
+    checkFacebookConnection,
+    isLoading
   };
 };
