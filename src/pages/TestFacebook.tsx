@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useChromeExtension } from "@/hooks/use-chrome-extension";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,13 +8,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
+import { Link } from "react-router-dom";
 
 const TestFacebook = () => {
-  const { isExtension, facebookStatus, sendTestPost } = useChromeExtension();
+  const { isExtension, facebookStatus, sendTestPost, addLogEntry, checkFacebookConnection } = useChromeExtension();
   const [testPostContent, setTestPostContent] = useState("");
   const [testMode, setTestMode] = useState("fill"); // "fill" or "post"
   const [isLoading, setIsLoading] = useState(false);
   const [closeTabAfterPost, setCloseTabAfterPost] = useState(true);
+
+  // Check connection on mount
+  useEffect(() => {
+    if (isExtension) {
+      checkFacebookConnection();
+    }
+  }, [isExtension]);
 
   const handleTestPost = async () => {
     if (!testPostContent) {
@@ -23,6 +31,7 @@ const TestFacebook = () => {
         description: "נא להזין תוכן לפוסט",
         variant: "destructive"
       });
+      addLogEntry('Test Post Error', 'error', 'ניסיון פרסום עם תוכן ריק');
       return;
     }
 
@@ -54,6 +63,7 @@ const TestFacebook = () => {
         variant: "destructive"
       });
       console.error("Error running test post:", error);
+      addLogEntry('Test Post Exception', 'error', `שגיאה לא צפויה: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoading(false);
     }
@@ -108,6 +118,15 @@ const TestFacebook = () => {
                 <p>המערכת יכולה לעבוד גם ללא דפדפן פייסבוק פתוח. לחץ על כפתור הרץ בדיקה כדי לפתוח פייסבוק אוטומטית ברקע.</p>
               </div>
             )}
+
+            <div className="flex justify-between mt-4">
+              <Button variant="outline" onClick={checkFacebookConnection} size="sm">
+                בדוק חיבור מחדש
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/logs">צפה ביומן פעילות</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -175,6 +194,7 @@ const TestFacebook = () => {
             <li>בחר את מצב הבדיקה - מילוי בלבד או פרסום מלא</li>
             <li>הזן את תוכן הפוסט לבדיקה</li>
             <li>לחץ על "הרץ בדיקה" - המערכת תפתח פייסבוק ברקע ותסגור אוטומטית לאחר הפעולה</li>
+            <li>ניתן לראות את ההיסטוריית הפעולות <Link to="/logs" className="text-primary hover:underline">ביומן הפעילות</Link></li>
           </ol>
         </CardContent>
       </Card>

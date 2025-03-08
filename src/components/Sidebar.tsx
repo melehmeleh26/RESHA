@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, BookTemplate, Users, Settings, Calendar, TestTube } from "lucide-react";
+import { LayoutDashboard, BookTemplate, Users, Settings, Calendar, TestTube, ListTodo } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const Sidebar = () => {
@@ -61,6 +61,7 @@ const Sidebar = () => {
         <NavItem to="/groups" icon={Users} label="קבוצות" delay={300} />
         <NavItem to="/scheduler" icon={Calendar} label="לוח שנה" delay={400} />
         <NavItem to="/test-facebook" icon={TestTube} label="בדיקות" delay={500} />
+        <NavItem to="/logs" icon={ListTodo} label="יומן פעילות" delay={550} />
         <NavItem to="/settings" icon={Settings} label="הגדרות" delay={600} />
       </nav>
 

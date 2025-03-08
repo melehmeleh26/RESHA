@@ -30,6 +30,14 @@ interface TestPostOptions {
   closeTabAfterPost?: boolean;
 }
 
+interface LogEntry {
+  id: string;
+  timestamp: string;
+  action: string;
+  status: 'success' | 'warning' | 'error' | 'info';
+  details: string;
+}
+
 // Check if running in a Chrome extension environment
 const isChromeExtension = () => {
   return typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id;
@@ -44,6 +52,7 @@ export const useChromeExtension = () => {
   });
   const [facebookGroupsStatus, setFacebookGroupsStatus] = useState<FacebookGroupStatus>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
 
   useEffect(() => {
     // Check if we're running as an extension
@@ -61,6 +70,12 @@ export const useChromeExtension = () => {
       
       if (message.type === 'PAGE_STATUS') {
         setFacebookStatus(message.data);
+      } else if (message.type === 'LOG_ENTRY') {
+        addLogEntry(
+          message.data.action, 
+          message.data.status, 
+          message.data.details
+        );
       }
     };
 
@@ -91,6 +106,13 @@ export const useChromeExtension = () => {
       }
     });
 
+    // Get stored logs
+    chrome.runtime.sendMessage({ type: 'GET_LOGS' }, (response) => {
+      if (response && response.logs) {
+        setLogs(response.logs);
+      }
+    });
+
     return () => {
       // Clean up listener when component unmounts
       chrome.runtime.onMessage.removeListener(messageListener);
@@ -105,6 +127,7 @@ export const useChromeExtension = () => {
     }
 
     setIsLoading(true);
+    addLogEntry('Test Post Request', 'info', `Attempting to post: "${postData.content.substring(0, 30)}..." in mode: ${postData.mode}`);
 
     try {
       return new Promise((resolve) => {
@@ -118,27 +141,65 @@ export const useChromeExtension = () => {
           },
           (response: TestPostResponse) => {
             setIsLoading(false);
+            
+            // Add log entry with result
+            if (response && response.success) {
+              addLogEntry('Test Post Success', 'success', response.message || 'Post was successful');
+            } else {
+              addLogEntry('Test Post Failed', 'error', (response && response.message) || 'Failed to post with no response');
+            }
+            
             resolve(response || { success: false, message: 'No response from extension' });
           }
         );
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      addLogEntry('Test Post Error', 'error', errorMessage);
       setIsLoading(false);
       return { 
         success: false, 
         message: 'Error sending test post', 
-        error: error instanceof Error ? error.message : String(error) 
+        error: errorMessage 
       };
     }
+  };
+
+  // Add a log entry
+  const addLogEntry = (action: string, status: 'success' | 'warning' | 'error' | 'info', details: string) => {
+    const newEntry: LogEntry = {
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      action,
+      status,
+      details
+    };
+    
+    setLogs(prevLogs => {
+      const updatedLogs = [newEntry, ...prevLogs].slice(0, 100); // Keep only the latest 100 logs
+      
+      // Send to background script to persist
+      if (isExtension) {
+        chrome.runtime.sendMessage({ 
+          type: 'SAVE_LOG', 
+          data: { log: newEntry }
+        });
+      }
+      
+      return updatedLogs;
+    });
   };
 
   // Check if currently connected to a Facebook group
   const checkFacebookConnection = () => {
     if (!isExtension) return;
     
+    addLogEntry('Connection Check', 'info', 'Checking Facebook connection status');
+    
     chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
       if (tabs.length > 0 && tabs[0].id) {
         chrome.tabs.sendMessage(tabs[0].id, { type: 'CHECK_GROUP_STATUS' });
+        addLogEntry('Connection Found', 'info', `Active Facebook tab found at ${tabs[0].url}`);
       } else {
         // Get stored Facebook groups status when no active tab
         chrome.runtime.sendMessage({ type: 'GET_FACEBOOK_STATUS' }, (response) => {
@@ -148,15 +209,26 @@ export const useChromeExtension = () => {
               inFacebookGroup: true,
               url: 'stored-groups'
             });
+            addLogEntry('Stored Groups', 'info', 'Using stored Facebook groups');
           } else {
             setFacebookStatus({
               inFacebookGroup: false,
               url: ''
             });
+            addLogEntry('No Connection', 'warning', 'No active Facebook tab or stored groups found');
           }
         });
       }
     });
+  };
+
+  // Clear logs
+  const clearLogs = () => {
+    setLogs([]);
+    if (isExtension) {
+      chrome.runtime.sendMessage({ type: 'CLEAR_LOGS' });
+    }
+    addLogEntry('Logs Cleared', 'info', 'All logs have been cleared');
   };
 
   return {
@@ -165,6 +237,9 @@ export const useChromeExtension = () => {
     facebookGroupsStatus,
     sendTestPost,
     checkFacebookConnection,
-    isLoading
+    isLoading,
+    logs,
+    addLogEntry,
+    clearLogs
   };
 };
