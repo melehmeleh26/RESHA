@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Templates from "./pages/Templates";
 import Groups from "./pages/Groups";
 import Settings from "./pages/Settings";
+import Scheduler from "./pages/Scheduler";
 import NotFound from "./pages/NotFound";
 import Layout from "./components/Layout";
 
@@ -25,6 +26,7 @@ const App = () => (
             <Route index element={<Dashboard />} />
             <Route path="templates" element={<Templates />} />
             <Route path="groups" element={<Groups />} />
+            <Route path="scheduler" element={<Scheduler />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />
           </Route>
