@@ -7,11 +7,27 @@ interface FacebookStatus {
   url: string;
 }
 
+interface FacebookGroupStatus {
+  [groupId: string]: {
+    lastChecked: string;
+    id: string;
+    name: string;
+    url: string;
+    status: 'active' | 'inactive';
+  };
+}
+
 interface TestPostResponse {
   success: boolean;
   message?: string;
   result?: any;
   error?: string;
+}
+
+interface TestPostOptions {
+  content: string;
+  mode: string;
+  closeTabAfterPost?: boolean;
 }
 
 // Check if running in a Chrome extension environment
@@ -26,6 +42,7 @@ export const useChromeExtension = () => {
     inFacebookGroup: false,
     url: ''
   });
+  const [facebookGroupsStatus, setFacebookGroupsStatus] = useState<FacebookGroupStatus>({});
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -53,8 +70,10 @@ export const useChromeExtension = () => {
     chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
       if (tabs.length > 0) {
         const url = tabs[0].url || '';
+        const inFacebookGroup = url.includes('/groups/');
+        
         setFacebookStatus({
-          inFacebookGroup: url.includes('/groups/'),
+          inFacebookGroup,
           url
         });
         
@@ -65,6 +84,13 @@ export const useChromeExtension = () => {
       }
     });
 
+    // Get stored Facebook groups status
+    chrome.runtime.sendMessage({ type: 'GET_FACEBOOK_STATUS' }, (response) => {
+      if (response && response.status) {
+        setFacebookGroupsStatus(response.status);
+      }
+    });
+
     return () => {
       // Clean up listener when component unmounts
       chrome.runtime.onMessage.removeListener(messageListener);
@@ -72,7 +98,7 @@ export const useChromeExtension = () => {
   }, []);
 
   // Function to send a test post request
-  const sendTestPost = async (postData: any): Promise<TestPostResponse> => {
+  const sendTestPost = async (postData: TestPostOptions): Promise<TestPostResponse> => {
     if (!isExtension) {
       console.error('Cannot send test post: Not running as Chrome extension');
       return { success: false, message: 'Not running as Chrome extension' };
@@ -83,7 +109,13 @@ export const useChromeExtension = () => {
     try {
       return new Promise((resolve) => {
         chrome.runtime.sendMessage(
-          { type: 'TEST_POST', data: postData },
+          { 
+            type: 'TEST_POST', 
+            data: {
+              ...postData,
+              closeTabAfterPost: true // Always close the tab after posting
+            } 
+          },
           (response: TestPostResponse) => {
             setIsLoading(false);
             resolve(response || { success: false, message: 'No response from extension' });
@@ -108,9 +140,20 @@ export const useChromeExtension = () => {
       if (tabs.length > 0 && tabs[0].id) {
         chrome.tabs.sendMessage(tabs[0].id, { type: 'CHECK_GROUP_STATUS' });
       } else {
-        setFacebookStatus({
-          inFacebookGroup: false,
-          url: ''
+        // Get stored Facebook groups status when no active tab
+        chrome.runtime.sendMessage({ type: 'GET_FACEBOOK_STATUS' }, (response) => {
+          if (response && response.hasActiveGroups) {
+            // We have stored groups we can work with
+            setFacebookStatus({
+              inFacebookGroup: true,
+              url: 'stored-groups'
+            });
+          } else {
+            setFacebookStatus({
+              inFacebookGroup: false,
+              url: ''
+            });
+          }
         });
       }
     });
@@ -119,6 +162,7 @@ export const useChromeExtension = () => {
   return {
     isExtension,
     facebookStatus,
+    facebookGroupsStatus,
     sendTestPost,
     checkFacebookConnection,
     isLoading

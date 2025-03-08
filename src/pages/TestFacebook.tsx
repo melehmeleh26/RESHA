@@ -6,19 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
-
-// Define types for the test post response
-interface TestPostResult {
-  success: boolean;
-  message?: string;
-}
 
 const TestFacebook = () => {
   const { isExtension, facebookStatus, sendTestPost } = useChromeExtension();
   const [testPostContent, setTestPostContent] = useState("");
   const [testMode, setTestMode] = useState("fill"); // "fill" or "post"
   const [isLoading, setIsLoading] = useState(false);
+  const [closeTabAfterPost, setCloseTabAfterPost] = useState(true);
 
   const handleTestPost = async () => {
     if (!testPostContent) {
@@ -35,7 +31,8 @@ const TestFacebook = () => {
     try {
       const result = await sendTestPost({
         content: testPostContent,
-        mode: testMode
+        mode: testMode,
+        closeTabAfterPost
       });
       
       if (result.success) {
@@ -107,7 +104,8 @@ const TestFacebook = () => {
 
             {isExtension && !facebookStatus.inFacebookGroup && (
               <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                <strong>קבוצת פייסבוק לא נמצאה.</strong> נא לפתוח קבוצת פייסבוק בלשונית פעילה כדי לבצע בדיקות.
+                <p><strong>קבוצות פייסבוק לא נמצאו.</strong></p>
+                <p>המערכת יכולה לעבוד גם ללא דפדפן פייסבוק פתוח. לחץ על כפתור הרץ בדיקה כדי לפתוח פייסבוק אוטומטית ברקע.</p>
               </div>
             )}
           </CardContent>
@@ -133,6 +131,15 @@ const TestFacebook = () => {
               </Select>
             </div>
 
+            <div className="flex items-center space-x-2 space-x-reverse">
+              <Switch
+                id="close-tab"
+                checked={closeTabAfterPost}
+                onCheckedChange={setCloseTabAfterPost}
+              />
+              <Label htmlFor="close-tab">סגור לשונית אוטומטית לאחר פרסום</Label>
+            </div>
+
             <div>
               <Label htmlFor="testContent">תוכן הפוסט</Label>
               <Textarea
@@ -147,7 +154,7 @@ const TestFacebook = () => {
           <CardFooter>
             <Button 
               onClick={handleTestPost} 
-              disabled={!isExtension || !facebookStatus.inFacebookGroup || isLoading}
+              disabled={!isExtension || isLoading}
               className="w-full"
             >
               {isLoading ? "מבצע בדיקה..." : "הרץ בדיקה"}
@@ -164,10 +171,10 @@ const TestFacebook = () => {
         <CardContent>
           <ol className="list-decimal list-inside space-y-2 text-sm">
             <li>וודא שהתוסף מותקן ופעיל (אייקון GroupsFlow בסרגל התוספים)</li>
-            <li>פתח קבוצת פייסבוק באותו דפדפן בלשונית נפרדת</li>
+            <li>התוסף יכול לפתוח את פייסבוק ברקע ולהתחבר אוטומטית</li>
             <li>בחר את מצב הבדיקה - מילוי בלבד או פרסום מלא</li>
             <li>הזן את תוכן הפוסט לבדיקה</li>
-            <li>לחץ על "הרץ בדיקה" ועבור ללשונית הפייסבוק כדי לראות את התוצאות</li>
+            <li>לחץ על "הרץ בדיקה" - המערכת תפתח פייסבוק ברקע ותסגור אוטומטית לאחר הפעולה</li>
           </ol>
         </CardContent>
       </Card>
