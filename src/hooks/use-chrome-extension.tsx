@@ -91,7 +91,7 @@ export const useChromeExtension = () => {
             lastChecked: group.lastChecked || new Date().toISOString()
           }));
           setAvailableGroups(typedGroups);
-          addLogEntry('Groups Fetched', 'info', `Found ${typedGroups.length} Facebook groups`);
+          addLogEntry('קבוצות התקבלו', 'info', `נמצאו ${typedGroups.length} קבוצות פייסבוק`);
         }
       }
     };
@@ -149,12 +149,12 @@ export const useChromeExtension = () => {
   const fetchUserGroups = () => {
     if (!isExtension) {
       console.error('Cannot fetch groups: Not running as Chrome extension');
-      addLogEntry('Fetch Groups Error', 'error', 'Not running as Chrome extension');
+      addLogEntry('שגיאת טעינת קבוצות', 'error', 'התוסף אינו פעיל');
       return;
     }
     
     setIsLoading(true);
-    addLogEntry('Fetching Groups', 'info', 'Requesting Facebook groups list');
+    addLogEntry('טוען קבוצות', 'info', 'מבקש רשימת קבוצות פייסבוק');
     
     console.log('Sending FETCH_FACEBOOK_GROUPS message to background script');
     
@@ -175,9 +175,9 @@ export const useChromeExtension = () => {
         }));
         
         setAvailableGroups(typedGroups);
-        addLogEntry('Groups Fetched', 'success', `Retrieved ${typedGroups.length} Facebook groups`);
+        addLogEntry('קבוצות התקבלו', 'success', `התקבלו ${typedGroups.length} קבוצות פייסבוק`);
       } else {
-        addLogEntry('Groups Fetch Failed', 'error', response?.error || 'Failed to fetch Facebook groups');
+        addLogEntry('נכשל בטעינת קבוצות', 'error', response?.error || 'נכשל בטעינת קבוצות פייסבוק');
         
         // If we don't have groups from the API, let's attempt to check if there are any active Facebook tabs
         chrome.tabs.query({ url: "*://*.facebook.com/groups/*" }, (tabs) => {
@@ -188,7 +188,7 @@ export const useChromeExtension = () => {
                 chrome.tabs.sendMessage(tab.id, { type: 'GET_GROUP_INFO' });
               }
             });
-            addLogEntry('Attempting Alternate Group Detection', 'info', `Found ${tabs.length} Facebook group tabs`);
+            addLogEntry('מנסה זיהוי קבוצות חלופי', 'info', `נמצאו ${tabs.length} לשוניות קבוצות פייסבוק`);
           }
         });
       }
@@ -199,11 +199,11 @@ export const useChromeExtension = () => {
   const sendTestPost = async (postData: TestPostOptions): Promise<TestPostResponse> => {
     if (!isExtension) {
       console.error('Cannot send test post: Not running as Chrome extension');
-      return { success: false, message: 'Not running as Chrome extension' };
+      return { success: false, message: 'התוסף אינו פעיל' };
     }
 
     setIsLoading(true);
-    addLogEntry('Test Post Request', 'info', `Attempting to post: "${postData.content.substring(0, 30)}..." in mode: ${postData.mode}${postData.targetGroupId ? ` to group ID: ${postData.targetGroupId}` : ''}`);
+    addLogEntry('בקשת פרסום', 'info', `מנסה לפרסם: "${postData.content.substring(0, 30)}..." במצב: ${postData.mode}${postData.targetGroupId ? ` לקבוצה: ${postData.targetGroupId}` : ''}`);
 
     try {
       return new Promise((resolve) => {
@@ -220,22 +220,22 @@ export const useChromeExtension = () => {
             
             // Add log entry with result
             if (response && response.success) {
-              addLogEntry('Test Post Success', 'success', response.message || 'Post was successful');
+              addLogEntry('פרסום הצליח', 'success', response.message || 'הפרסום בוצע בהצלחה');
             } else {
-              addLogEntry('Test Post Failed', 'error', (response && response.message) || 'Failed to post with no response');
+              addLogEntry('פרסום נכשל', 'error', (response && response.message) || 'הפרסום נכשל ללא תגובה');
             }
             
-            resolve(response || { success: false, message: 'No response from extension' });
+            resolve(response || { success: false, message: 'אין תגובה מהתוסף' });
           }
         );
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      addLogEntry('Test Post Error', 'error', errorMessage);
+      addLogEntry('שגיאת פרסום', 'error', errorMessage);
       setIsLoading(false);
       return { 
         success: false, 
-        message: 'Error sending test post', 
+        message: 'שגיאה בשליחת פרסום', 
         error: errorMessage 
       };
     }
@@ -271,12 +271,22 @@ export const useChromeExtension = () => {
     if (!isExtension) return;
     
     setIsLoading(true);
-    addLogEntry('Connection Check', 'info', 'Checking Facebook connection status');
+    addLogEntry('בדיקת חיבור', 'info', 'בודק סטטוס חיבור לפייסבוק');
     
-    chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs.length > 0 && tabs[0].id) {
+        // Fixed the TypeScript error by properly specifying the object structure
         chrome.tabs.sendMessage(tabs[0].id, { type: 'CHECK_GROUP_STATUS' });
-        addLogEntry('Connection Found', 'info', `Active Facebook tab found at ${tabs[0].url}`);
+        
+        const url = tabs[0].url || '';
+        const inFacebookGroup = url && url.includes('facebook.com/groups/');
+        
+        setFacebookStatus({
+          inFacebookGroup,
+          url: url || ''
+        });
+        
+        addLogEntry('חיבור נמצא', 'info', `נמצאה לשונית פייסבוק פעילה ב-${tabs[0].url}`);
       } else {
         // Get stored Facebook groups status when no active tab
         chrome.runtime.sendMessage({ type: 'GET_FACEBOOK_STATUS' }, (response) => {
@@ -286,13 +296,13 @@ export const useChromeExtension = () => {
               inFacebookGroup: true,
               url: 'stored-groups'
             });
-            addLogEntry('Stored Groups', 'info', 'Using stored Facebook groups');
+            addLogEntry('קבוצות מאוחסנות', 'info', 'משתמש בקבוצות פייסבוק מאוחסנות');
           } else {
             setFacebookStatus({
               inFacebookGroup: false,
               url: ''
             });
-            addLogEntry('No Connection', 'warning', 'No active Facebook tab or stored groups found');
+            addLogEntry('אין חיבור', 'warning', 'לא נמצאה לשונית פייסבוק פעילה או קבוצות מאוחסנות');
           }
         });
       }
@@ -309,7 +319,7 @@ export const useChromeExtension = () => {
     if (isExtension) {
       chrome.runtime.sendMessage({ type: 'CLEAR_LOGS' });
     }
-    addLogEntry('Logs Cleared', 'info', 'All logs have been cleared');
+    addLogEntry('יומן נוקה', 'info', 'כל הרשומות ביומן נמחקו');
   };
 
   return {
