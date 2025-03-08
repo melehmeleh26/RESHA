@@ -10,6 +10,7 @@ import Templates from "./pages/Templates";
 import Groups from "./pages/Groups";
 import Settings from "./pages/Settings";
 import Scheduler from "./pages/Scheduler";
+import TestFacebook from "./pages/TestFacebook";
 import NotFound from "./pages/NotFound";
 import Layout from "./components/Layout";
 
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="groups" element={<Groups />} />
             <Route path="scheduler" element={<Scheduler />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="test-facebook" element={<TestFacebook />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
