@@ -7,14 +7,16 @@ interface FacebookStatus {
   url: string;
 }
 
+interface FacebookGroup {
+  id: string;
+  name: string;
+  url: string;
+  status: 'active' | 'inactive';
+  lastChecked: string;
+}
+
 interface FacebookGroupStatus {
-  [groupId: string]: {
-    lastChecked: string;
-    id: string;
-    name: string;
-    url: string;
-    status: 'active' | 'inactive';
-  };
+  [groupId: string]: FacebookGroup;
 }
 
 interface TestPostResponse {
@@ -28,6 +30,7 @@ interface TestPostOptions {
   content: string;
   mode: string;
   closeTabAfterPost?: boolean;
+  targetGroupId?: string;  // Added for targeting specific group
 }
 
 interface LogEntry {
@@ -51,6 +54,7 @@ export const useChromeExtension = () => {
     url: ''
   });
   const [facebookGroupsStatus, setFacebookGroupsStatus] = useState<FacebookGroupStatus>({});
+  const [availableGroups, setAvailableGroups] = useState<FacebookGroup[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
@@ -76,6 +80,11 @@ export const useChromeExtension = () => {
           message.data.status, 
           message.data.details
         );
+      } else if (message.type === 'FACEBOOK_GROUPS_LIST') {
+        if (message.data && Array.isArray(message.data.groups)) {
+          setAvailableGroups(message.data.groups);
+          addLogEntry('Groups Fetched', 'info', `Found ${message.data.groups.length} Facebook groups`);
+        }
       }
     };
 
@@ -103,8 +112,15 @@ export const useChromeExtension = () => {
     chrome.runtime.sendMessage({ type: 'GET_FACEBOOK_STATUS' }, (response) => {
       if (response && response.status) {
         setFacebookGroupsStatus(response.status);
+        
+        // Convert the object to an array for easier rendering
+        const groupsArray = Object.values(response.status);
+        setAvailableGroups(groupsArray);
       }
     });
+
+    // Request list of Facebook groups from the background script
+    fetchUserGroups();
 
     // Get stored logs
     chrome.runtime.sendMessage({ type: 'GET_LOGS' }, (response) => {
@@ -119,6 +135,25 @@ export const useChromeExtension = () => {
     };
   }, []);
 
+  // Function to fetch user's Facebook groups
+  const fetchUserGroups = () => {
+    if (!isExtension) {
+      console.error('Cannot fetch groups: Not running as Chrome extension');
+      return;
+    }
+    
+    addLogEntry('Fetching Groups', 'info', 'Requesting Facebook groups list');
+    
+    chrome.runtime.sendMessage({ type: 'FETCH_FACEBOOK_GROUPS' }, (response) => {
+      if (response && response.success && response.groups) {
+        setAvailableGroups(response.groups);
+        addLogEntry('Groups Fetched', 'success', `Retrieved ${response.groups.length} Facebook groups`);
+      } else {
+        addLogEntry('Groups Fetch Failed', 'error', response?.error || 'Failed to fetch Facebook groups');
+      }
+    });
+  };
+
   // Function to send a test post request
   const sendTestPost = async (postData: TestPostOptions): Promise<TestPostResponse> => {
     if (!isExtension) {
@@ -127,7 +162,7 @@ export const useChromeExtension = () => {
     }
 
     setIsLoading(true);
-    addLogEntry('Test Post Request', 'info', `Attempting to post: "${postData.content.substring(0, 30)}..." in mode: ${postData.mode}`);
+    addLogEntry('Test Post Request', 'info', `Attempting to post: "${postData.content.substring(0, 30)}..." in mode: ${postData.mode}${postData.targetGroupId ? ` to group ID: ${postData.targetGroupId}` : ''}`);
 
     try {
       return new Promise((resolve) => {
@@ -220,6 +255,9 @@ export const useChromeExtension = () => {
         });
       }
     });
+    
+    // Also refresh the groups list
+    fetchUserGroups();
   };
 
   // Clear logs
@@ -235,8 +273,10 @@ export const useChromeExtension = () => {
     isExtension,
     facebookStatus,
     facebookGroupsStatus,
+    availableGroups,
     sendTestPost,
     checkFacebookConnection,
+    fetchUserGroups,
     isLoading,
     logs,
     addLogEntry,
