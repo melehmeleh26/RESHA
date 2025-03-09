@@ -1,30 +1,52 @@
 // Content script for Facebook interaction
 console.log('GroupsFlow content script loaded');
 
-// Helper function to wait for an element to appear on the page
-const waitForElement = (selector, timeout = 10000) => {
+// Enhanced helper function to wait for an element to appear and be interactive
+const waitForElement = (selector, timeout = 10000, checkInteractive = true) => {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(selector)) {
-      return resolve(document.querySelector(selector));
+    // First try to find element immediately
+    const element = document.querySelector(selector);
+    if (element && (!checkInteractive || element.offsetParent !== null)) {
+      return resolve(element);
     }
-    
+
+    // Set up mutation observer
     const observer = new MutationObserver((mutations) => {
-      if (document.querySelector(selector)) {
+      const foundElement = document.querySelector(selector);
+      if (foundElement && (!checkInteractive || foundElement.offsetParent !== null)) {
         observer.disconnect();
-        resolve(document.querySelector(selector));
+        resolve(foundElement);
       }
     });
-    
+
     observer.observe(document.body, {
       childList: true,
       subtree: true
     });
-    
-    // Set timeout to avoid waiting forever
-    setTimeout(() => {
+
+    // Set timeout
+    const timeoutId = setTimeout(() => {
       observer.disconnect();
       reject(new Error(`Element ${selector} not found within ${timeout}ms`));
     }, timeout);
+
+    // Also check for permission dialogs
+    const permissionObserver = new MutationObserver(() => {
+      const permissionDialog = document.querySelector('[role="dialog"]');
+      if (permissionDialog) {
+        // Try to find and click the "Continue" button
+        const continueButton = permissionDialog.querySelector('div[role="button"]');
+        if (continueButton) {
+          continueButton.click();
+          console.log('Clicked permission dialog continue button');
+        }
+      }
+    });
+
+    permissionObserver.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
   });
 };
 
@@ -244,29 +266,54 @@ const submitPost = async () => {
   }
 };
 
-// Handle test post requests
+// Enhanced test post handler with permission checks
 const handleTestPost = async (postData) => {
   console.log('Handling test post request:', postData);
   
-  // Check if we're in a Facebook group
-  const { inFacebookGroup } = checkFacebookGroupStatus();
-  
-  // Wait for Facebook page to be fully loaded
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Fill the post form with content
-  const fillResult = await fillPostForm(postData.content);
-  if (!fillResult.success) {
+  try {
+    // Check if we're in a Facebook group
+    const { inFacebookGroup } = checkFacebookGroupStatus();
+    if (!inFacebookGroup) {
+      throw new Error('Not in a Facebook group');
+    }
+
+    // Wait for page to be fully loaded and interactive
+    await waitForElement('body', 10000, true);
+
+    // Check for permission dialogs
+    const permissionDialog = await waitForElement('[role="dialog"]', 3000)
+      .catch(() => null); // Ignore if no dialog
+    
+    if (permissionDialog) {
+      // Try to find and click the "Continue" button
+      const continueButton = permissionDialog.querySelector('div[role="button"]');
+      if (continueButton) {
+        continueButton.click();
+        console.log('Clicked permission dialog continue button');
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for dialog to close
+      }
+    }
+
+    // Fill the post form with content
+    const fillResult = await fillPostForm(postData.content);
+    if (!fillResult.success) {
+      return fillResult;
+    }
+    
+    // If mode is "post", actually submit the post
+    if (postData.mode === 'post') {
+      return await submitPost();
+    }
+    
     return fillResult;
+  } catch (error) {
+    console.error('Error handling test post:', error);
+    return { 
+      success: false, 
+      message: 'אירעה שגיאה בעת ביצוע הבדיקה', 
+      error: error.message 
+    };
   }
-  
-  // If mode is "post", actually submit the post
-  if (postData.mode === 'post') {
-    return await submitPost();
-  }
-  
-  // Otherwise just return the success of filling
-  return fillResult;
 };
 
 // Navigate to specific Facebook group
