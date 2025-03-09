@@ -77,7 +77,6 @@ const TestFacebook = () => {
         toast({
           title: "לא נמצאו קבוצות",
           description: "פתח את פייסבוק בלשונית נפרדת ונסה שוב",
-          variant: "warning",
         });
         
         // Try to open Facebook groups page if no groups were found
