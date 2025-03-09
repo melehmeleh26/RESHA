@@ -56,25 +56,27 @@ const TestFacebook = () => {
     console.log("Manual refresh requested");
     
     // First check if we're in a Facebook tab
-    chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
-      if (tabs.length > 0) {
-        console.log("Found active Facebook tab:", tabs[0].url);
-        // We have an active Facebook tab, let's try to get data from it
-        if (tabs[0].id) {
-          chrome.tabs.sendMessage(tabs[0].id, { 
-            type: 'FORCE_GROUP_SCAN',
-            urgent: true
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
+        if (tabs.length > 0) {
+          console.log("Found active Facebook tab:", tabs[0].url);
+          // We have an active Facebook tab, let's try to get data from it
+          if (tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, { 
+              type: 'FORCE_GROUP_SCAN',
+              urgent: true
+            });
+          }
+        } else {
+          console.log("No active Facebook tab, asking background script to find or create one");
+          // No active Facebook tab, ask the background script to find or create one
+          chrome.runtime.sendMessage({ 
+            type: 'FORCE_FETCH_GROUPS',
+            createTabIfNeeded: true
           });
         }
-      } else {
-        console.log("No active Facebook tab, asking background script to find or create one");
-        // No active Facebook tab, ask the background script to find or create one
-        chrome.runtime.sendMessage({ 
-          type: 'FORCE_FETCH_GROUPS',
-          createTabIfNeeded: true
-        });
-      }
-    });
+      });
+    }
     
     toast({
       title: "רענון קבוצות",
@@ -107,7 +109,7 @@ const TestFacebook = () => {
   };
 
   const openFacebookGroups = () => {
-    if (isExtension) {
+    if (isExtension && typeof chrome !== 'undefined' && chrome.tabs) {
       chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/" });
       toast({
         title: "נפתח עמוד קבוצות",

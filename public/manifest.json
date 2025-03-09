@@ -23,7 +23,8 @@
     "tabs",
     "scripting",
     "alarms",
-    "background"
+    "background",
+    "activeTab"
   ],
   "host_permissions": [
     "https://*.facebook.com/*"
@@ -31,7 +32,8 @@
   "content_scripts": [
     {
       "matches": ["https://*.facebook.com/*"],
-      "js": ["js/content.js"]
+      "js": ["js/content.js"],
+      "run_at": "document_idle"
     }
   ],
   "background": {

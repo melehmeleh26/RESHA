@@ -3,8 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { ListFilter, UserCheck } from "lucide-react";
+import { ListFilter, UserCheck, RefreshCw } from "lucide-react";
 import { FacebookGroup } from "@/types/facebook";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface GroupsListProps {
   availableGroups: FacebookGroup[];
@@ -31,11 +32,30 @@ const GroupsList = ({
       </CardHeader>
       <CardContent>
         {availableGroups.length === 0 ? (
-          <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-            <p className="flex items-center">
-              <UserCheck className="ml-2 h-5 w-5" />
-              <span>לא נמצאו קבוצות פייסבוק. לחץ על כפתור "רענן מצב וקבוצות" כדי לנסות שוב.</span>
-            </p>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-blue-50 p-4 text-sm text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+              <p className="flex items-center">
+                <UserCheck className="ml-2 h-5 w-5" />
+                <span>לא נמצאו קבוצות פייסבוק. לחץ על כפתור "רענן קבוצות" כדי לנסות שוב.</span>
+              </p>
+            </div>
+
+            <Alert variant="default" className="bg-primary/5 border-primary/20">
+              <AlertDescription className="text-xs">
+                טיפ: פתח את פייסבוק בלשונית אחרת ונווט לעמוד הקבוצות שלך לפני שאתה מנסה לרענן את הרשימה.
+              </AlertDescription>
+            </Alert>
+            
+            <Button 
+              variant="outline" 
+              className="w-full" 
+              size="sm" 
+              onClick={handleRefreshGroups}
+              disabled={isFetching || isLoading}
+            >
+              <RefreshCw className={`ml-2 h-4 w-4 ${(isFetching || isLoading) ? "animate-spin" : ""}`} />
+              רענן קבוצות
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
