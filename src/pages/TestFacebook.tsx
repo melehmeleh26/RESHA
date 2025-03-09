@@ -49,6 +49,13 @@ const TestFacebook = () => {
     return () => clearInterval(intervalId);
   }, [isExtension, availableGroups.length]);
 
+  // If we have groups and no group is selected, select the first one
+  useEffect(() => {
+    if (availableGroups.length > 0 && !selectedGroupId) {
+      setSelectedGroupId(availableGroups[0].id);
+    }
+  }, [availableGroups, selectedGroupId]);
+
   const handleRefreshGroups = () => {
     setIsFetching(true);
     addLogEntry('מרענן קבוצות', 'info', 'מנסה לטעון קבוצות פייסבוק');
