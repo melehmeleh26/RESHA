@@ -27,6 +27,7 @@ const App = () => (
           {/* Redirect from extension page and root to dashboard */}
           <Route path="/index.html" element={<Navigate to="/dashboard" replace />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/newtab" element={<Navigate to="/dashboard" replace />} />
           
           <Route path="/" element={<Layout />}>
             <Route path="dashboard" element={<Dashboard />} />
