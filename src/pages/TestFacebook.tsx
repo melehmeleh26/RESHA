@@ -8,6 +8,7 @@ import StatusCard from "@/components/facebook/StatusCard";
 import GroupsList from "@/components/facebook/GroupsList";
 import PostCreationForm from "@/components/facebook/PostCreationForm";
 import InstructionsCard from "@/components/facebook/InstructionsCard";
+import { toast } from "@/hooks/use-toast";
 
 const TestFacebook = () => {
   const [activeTab, setActiveTab] = useState("post");
@@ -28,12 +29,68 @@ const TestFacebook = () => {
   useEffect(() => {
     // Check Facebook connection when component mounts
     checkFacebookConnection();
-  }, []);
+    
+    // Load groups when component mounts
+    handleRefreshGroups();
+    
+    // Set up interval to check for groups every 5 seconds if none are found
+    const intervalId = setInterval(() => {
+      if (availableGroups.length === 0 && isExtension) {
+        console.log("No groups found, attempting to fetch again...");
+        fetchUserGroups();
+      } else {
+        clearInterval(intervalId);
+      }
+    }, 5000);
+    
+    return () => clearInterval(intervalId);
+  }, [isExtension, availableGroups.length]);
 
   const handleRefreshGroups = () => {
     setIsFetching(true);
+    addLogEntry('מרענן קבוצות', 'info', 'מנסה לטעון קבוצות פייסבוק');
+    
+    // If we're not running as an extension, we can't fetch groups
+    if (!isExtension) {
+      toast({
+        title: "תוסף דפדפן לא פעיל",
+        description: "התוסף אינו פעיל, לא ניתן לטעון קבוצות",
+        variant: "destructive",
+      });
+      setIsFetching(false);
+      return;
+    }
+    
     fetchUserGroups();
-    setTimeout(() => setIsFetching(false), 2000);
+    
+    // Set a timeout to hide the loading indicator after 3 seconds
+    setTimeout(() => {
+      setIsFetching(false);
+      
+      // Show success or warning toast based on results
+      if (availableGroups.length > 0) {
+        toast({
+          title: "קבוצות נטענו בהצלחה",
+          description: `נמצאו ${availableGroups.length} קבוצות פייסבוק`,
+        });
+      } else {
+        toast({
+          title: "לא נמצאו קבוצות",
+          description: "פתח את פייסבוק בלשונית נפרדת ונסה שוב",
+          variant: "warning",
+        });
+        
+        // Try to open Facebook groups page if no groups were found
+        if (isExtension && typeof chrome !== 'undefined' && chrome.tabs) {
+          try {
+            chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/", active: false });
+            addLogEntry('פתיחת דף קבוצות', 'info', 'נפתח דף קבוצות פייסבוק בלשונית חדשה');
+          } catch (error) {
+            console.error("Error opening Facebook groups page:", error);
+          }
+        }
+      }
+    }, 3000);
   };
 
   return (
@@ -70,7 +127,7 @@ const TestFacebook = () => {
           <InstructionsCard
             isExtension={isExtension}
             onCheckConnection={checkFacebookConnection}
-            onFetchGroups={fetchUserGroups}
+            onFetchGroups={handleRefreshGroups}
             isLoading={isLoading}
           />
         </div>

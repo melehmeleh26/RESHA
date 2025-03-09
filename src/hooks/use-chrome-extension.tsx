@@ -22,7 +22,7 @@ export const useChromeExtension = () => {
   useEffect(() => {
     // Check if we're running as an extension
     const extensionEnvironment = isChromeExtension();
-    setIsExtension(extensionEnvironment);
+    setIsExtension(extensionEnvironment); // Fixed: Now setting a boolean value
 
     if (!extensionEnvironment) {
       console.log('Not running as a Chrome extension');
@@ -246,67 +246,63 @@ export const useChromeExtension = () => {
           }
         });
       } else {
-        // No Facebook tabs open, try to open one
+        // No Facebook tabs open - open one and try to get groups
         try {
           if (!chrome.tabs) {
             throw new Error('Chrome tabs API not available');
           }
           
-          if ('create' in chrome.tabs) {
-            chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/", active: true }, (tab) => {
-              if (!tab) {
-                addLogEntry('נכשל בפתיחת דף פייסבוק', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
-                return;
-              }
-              
-              addLogEntry('נפתח דף קבוצות פייסבוק', 'info', 'נפתח דף קבוצות פייסבוק לחילוץ נתונים');
-              
-              // Wait for the page to load then inject script
-              setTimeout(() => {
-                if (tab.id && chrome.scripting) {
-                  try {
-                    chrome.scripting.executeScript({
-                      target: { tabId: tab.id },
-                      func: () => {
-                        // Similar extraction function as above
-                        setTimeout(() => {
-                          const groupLinks = Array.from(
-                            document.querySelectorAll('a[href*="/groups/"]')
-                          ) as HTMLAnchorElement[];
-        
-                          const groups = groupLinks
-                            .map(link => {
-                              const href = link.href;
-                              if (href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+\/?$/)) {
-                                const nameElement = link.querySelector('span, div') || link;
-                                const name = nameElement.textContent?.trim();
-                                return name && name.length > 0 ? { name, href } : null;
-                              }
-                              return null;
-                            })
-                            .filter(Boolean);
-        
-                          const uniqueGroups = groups.filter((group, index, self) => 
-                            index === self.findIndex((g) => g?.href === group?.href)
-                          );
-        
-                          chrome.runtime.sendMessage({
-                            type: 'FACEBOOK_GROUPS_DATA',
-                            data: uniqueGroups
-                          });
-                        }, 3000);
-                      }
-                    });
-                  } catch (error) {
-                    console.error('Error executing script:', error);
-                    addLogEntry('שגיאת הרצת סקריפט', 'error', 'נכשל בהרצת סקריפט איסוף קבוצות');
-                  }
+          chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/", active: true }, (tab) => {
+            if (!tab) {
+              addLogEntry('נכשל בפתיחת דף פייסבוק', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
+              return;
+            }
+            
+            addLogEntry('נפתח דף קבוצות פייסבוק', 'info', 'נפתח דף קבוצות פייסבוק לחילוץ נתונים');
+            
+            // Wait for the page to load then inject script
+            setTimeout(() => {
+              if (tab.id && chrome.scripting) {
+                try {
+                  chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: () => {
+                      // Similar extraction function as above
+                      setTimeout(() => {
+                        const groupLinks = Array.from(
+                          document.querySelectorAll('a[href*="/groups/"]')
+                        ) as HTMLAnchorElement[];
+      
+                        const groups = groupLinks
+                          .map(link => {
+                            const href = link.href;
+                            if (href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+\/?$/)) {
+                              const nameElement = link.querySelector('span, div') || link;
+                              const name = nameElement.textContent?.trim();
+                              return name && name.length > 0 ? { name, href } : null;
+                            }
+                            return null;
+                          })
+                          .filter(Boolean);
+      
+                        const uniqueGroups = groups.filter((group, index, self) => 
+                          index === self.findIndex((g) => g?.href === group?.href)
+                        );
+      
+                        chrome.runtime.sendMessage({
+                          type: 'FACEBOOK_GROUPS_DATA',
+                          data: uniqueGroups
+                        });
+                      }, 3000);
+                    }
+                  });
+                } catch (error) {
+                  console.error('Error executing script:', error);
+                  addLogEntry('שגיאת הרצת סקריפט', 'error', 'נכשל בהרצת סקריפט איסוף קבוצות');
                 }
-              }, 3000);
-            });
-          } else {
-            throw new Error('Chrome tabs.create API not available');
-          }
+              }
+            }, 3000);
+          });
         } catch (error) {
           console.error('Error creating tab:', error);
           addLogEntry('שגיאת פתיחת לשונית', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
@@ -406,7 +402,7 @@ export const useChromeExtension = () => {
           url: url || ''
         });
         
-        addLogEntry('חיבור נמצא', 'info', `נמצאה לשונית פייסבוק פעילה ב-${tabs[0].url || 'כתובת לא ידועה'}`);
+        addLogEntry('חיבור נמצא', 'info', `נמצאה לשונית פייסבוק פעילה ב-${url || 'כתובת לא ידועה'}`);
       } else {
         // Get stored Facebook groups status when no active tab
         chrome.runtime.sendMessage({ type: 'GET_FACEBOOK_STATUS' }, (response) => {
