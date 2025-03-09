@@ -174,19 +174,37 @@ export const useChromeExtension = () => {
       }
       
       // Clean up any URL parameters
-      const urlObj = new URL(url);
-      
-      // For group URLs, ensure they have a clean path
-      if (urlObj.pathname.includes('/groups/')) {
-        // Remove any trailing slashes or parameters
-        const groupPath = urlObj.pathname.replace(/\/+$/, '');
-        urlObj.search = '';
-        urlObj.hash = '';
+      try {
+        const urlObj = new URL(url);
         
-        return {
-          ...group,
-          url: urlObj.toString()
-        };
+        // For group URLs, ensure they have a clean path
+        if (urlObj.pathname.includes('/groups/')) {
+          // Extract the group ID - typically comes after /groups/
+          const pathParts = urlObj.pathname.split('/');
+          let groupId = '';
+          
+          for (let i = 0; i < pathParts.length; i++) {
+            if (pathParts[i] === 'groups' && i + 1 < pathParts.length) {
+              groupId = pathParts[i + 1];
+              break;
+            }
+          }
+          
+          // Make sure groupId is not empty and doesn't contain any special patterns
+          if (groupId && !groupId.includes('discover') && !groupId.includes('feed')) {
+            // Remove any trailing slashes or parameters
+            urlObj.search = '';
+            urlObj.hash = '';
+            
+            // Construct a clean URL with only the group ID
+            return {
+              ...group,
+              url: `https://www.facebook.com/groups/${groupId}`
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Error cleaning URL:', error);
       }
       
       return {
@@ -460,7 +478,19 @@ export const useChromeExtension = () => {
         // For group cards
         '[role="main"] div[role="article"] a[href*="/groups/"]',
         // More aggressive selectors for group names
-        '[role="listitem"] a[href*="/groups/"]'
+        '[role="listitem"] a[href*="/groups/"]',
+        // Common selectors for groups
+        'a[href*="/groups/"][aria-label]',
+        'a[href*="/groups/"][role="link"]',
+        'a[href*="/groups/"]:not([href*="discover"]):not([href*="feed"])',
+        // Group links in menus
+        'div[role="menu"] a[href*="/groups/"]',
+        // Direct links to groups in sidebars or navigation
+        'div[role="navigation"] a[href*="/groups/"]',
+        // Group links in list items
+        'div[role="list"] a[href*="/groups/"]',
+        // Groups you manage section
+        'span:contains("קבוצות שאתה מנהל"), span:contains("Groups You Manage")'
       ].join(', ')));
       
       console.log(`Found ${groupElements.length} potential group elements`);
@@ -474,6 +504,7 @@ export const useChromeExtension = () => {
           // Only include real group links (exclude feeds, about pages, etc.)
           if (!href.includes('/groups/') || 
               href.includes('/groups/feed') || 
+              href.includes('/groups/discover') ||
               href.includes('/about') || 
               href.includes('/members') ||
               href.includes('/permalink')) {
@@ -554,16 +585,20 @@ export const useChromeExtension = () => {
             
             // Normalize to base group URL
             if (urlObj.pathname.includes('/groups/')) {
-              const pathParts = urlObj.pathname.split('/');
-              if (pathParts.length >= 3 && pathParts[1] === 'groups') {
-                urlObj.pathname = `/groups/${groupId}`;
-              }
+              urlObj.pathname = `/groups/${groupId}`;
+              return { 
+                name, 
+                href: urlObj.toString(),
+                groupId,
+                extracted: true,
+                timestamp: new Date().toISOString()
+              };
             }
             
             return { 
               name, 
               href: urlObj.toString(),
-              groupId: groupId,
+              groupId,
               extracted: true,
               timestamp: new Date().toISOString()
             };
@@ -572,7 +607,7 @@ export const useChromeExtension = () => {
             return { 
               name, 
               href: `https://www.facebook.com/groups/${groupId}`,
-              groupId: groupId,
+              groupId,
               extracted: true,
               timestamp: new Date().toISOString()
             };
@@ -632,7 +667,7 @@ export const useChromeExtension = () => {
     
     // Auto-scroll to load more content
     let scrollCount = 0;
-    const maxScrolls = 12;
+    const maxScrolls = 15; // Increased from 12 to 15 to load more content
     
     const scrollInterval = setInterval(() => {
       window.scrollTo(0, document.body.scrollHeight);

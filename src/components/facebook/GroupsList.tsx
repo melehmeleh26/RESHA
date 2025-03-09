@@ -30,7 +30,41 @@ const GroupsList = ({
   // Function to open a group URL
   const openGroupUrl = (url: string, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent selecting the group
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Function to validate and format group URL
+  const validateGroupUrl = (url: string): string => {
+    if (!url) return '#';
+    
+    // Ensure it's a valid Facebook group URL
+    try {
+      // If it doesn't start with http, prepend it
+      if (!url.startsWith('http')) {
+        url = `https://www.facebook.com${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      
+      const urlObj = new URL(url);
+      
+      // Make sure the URL is pointing to facebook.com
+      if (!urlObj.hostname.includes('facebook.com')) {
+        return `https://www.facebook.com/groups/`;
+      }
+      
+      // Make sure it's a groups URL
+      if (!urlObj.pathname.includes('/groups/')) {
+        return `https://www.facebook.com/groups/`;
+      }
+      
+      // Clean up the URL by removing any query parameters and fragments
+      urlObj.search = '';
+      urlObj.hash = '';
+      
+      return urlObj.toString();
+    } catch (e) {
+      console.error('Error validating URL:', e);
+      return 'https://www.facebook.com/groups/';
+    }
   };
 
   return (
@@ -94,19 +128,20 @@ const GroupsList = ({
                     <div className="flex-1">
                       <div className="flex justify-between items-center">
                         <p className="font-medium text-sm">{group.name}</p>
-                        {showGroupUrls && (
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-6 w-6 mr-1" 
-                            onClick={(e) => openGroupUrl(group.url, e)}
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-6 w-6 mr-1" 
+                          onClick={(e) => openGroupUrl(validateGroupUrl(group.url), e)}
+                          title="פתח קבוצה בחלון חדש"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
                       </div>
                       {showGroupUrls && (
-                        <p className="text-xs text-muted-foreground truncate">{group.url}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {validateGroupUrl(group.url)}
+                        </p>
                       )}
                     </div>
                     <Badge variant={group.status === 'active' ? 'default' : 'outline'}>
