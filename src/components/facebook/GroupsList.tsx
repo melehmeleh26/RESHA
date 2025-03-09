@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { ListFilter, UserCheck, RefreshCw } from "lucide-react";
+import { ListFilter, UserCheck, RefreshCw, ExternalLink } from "lucide-react";
 import { FacebookGroup } from "@/types/facebook";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useState } from "react";
 
 interface GroupsListProps {
   availableGroups: FacebookGroup[];
@@ -24,11 +25,32 @@ const GroupsList = ({
   isFetching,
   isLoading
 }: GroupsListProps) => {
+  const [showGroupUrls, setShowGroupUrls] = useState(false);
+  
+  // Function to open a group URL
+  const openGroupUrl = (url: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent selecting the group
+    window.open(url, '_blank');
+  };
+
   return (
     <Card className="border shadow-sm">
       <CardHeader>
-        <CardTitle className="text-lg">קבוצות זמינות</CardTitle>
-        <CardDescription>רשימת קבוצות פייסבוק שאפשר לפרסם בהן</CardDescription>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle className="text-lg">קבוצות זמינות</CardTitle>
+            <CardDescription>רשימת קבוצות פייסבוק שאפשר לפרסם בהן</CardDescription>
+          </div>
+          {availableGroups.length > 0 && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowGroupUrls(!showGroupUrls)}
+            >
+              {showGroupUrls ? 'הסתר קישורים' : 'הצג קישורים'}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {availableGroups.length === 0 ? (
@@ -70,8 +92,22 @@ const GroupsList = ({
                     onClick={() => setSelectedGroupId(group.id)}
                   >
                     <div className="flex-1">
-                      <p className="font-medium text-sm">{group.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{group.url}</p>
+                      <div className="flex justify-between items-center">
+                        <p className="font-medium text-sm">{group.name}</p>
+                        {showGroupUrls && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6 mr-1" 
+                            onClick={(e) => openGroupUrl(group.url, e)}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      {showGroupUrls && (
+                        <p className="text-xs text-muted-foreground truncate">{group.url}</p>
+                      )}
                     </div>
                     <Badge variant={group.status === 'active' ? 'default' : 'outline'}>
                       {group.status === 'active' ? 'פעיל' : 'לא פעיל'}

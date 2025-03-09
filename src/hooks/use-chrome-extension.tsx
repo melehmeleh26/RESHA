@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { FacebookStatus, FacebookGroup, FacebookGroupStatus, TestPostResponse, TestPostOptions, LogEntry } from '@/types/facebook';
 import { toast } from '@/hooks/use-toast';
@@ -164,6 +163,37 @@ export const useChromeExtension = () => {
     
     console.log(`Processing ${validGroups.length} valid groups`);
     
+    // Sanitize and normalize Facebook group URLs
+    const sanitizedGroups = validGroups.map(group => {
+      let url = group.url;
+      
+      // Ensure URL uses https://
+      if (!url.startsWith('http')) {
+        url = `https://www.facebook.com${url.startsWith('/') ? '' : '/'}${url}`;
+      }
+      
+      // Clean up any URL parameters
+      const urlObj = new URL(url);
+      
+      // For group URLs, ensure they have a clean path
+      if (urlObj.pathname.includes('/groups/')) {
+        // Remove any trailing slashes or parameters
+        const groupPath = urlObj.pathname.replace(/\/+$/, '');
+        urlObj.search = '';
+        urlObj.hash = '';
+        
+        return {
+          ...group,
+          url: urlObj.toString()
+        };
+      }
+      
+      return {
+        ...group,
+        url
+      };
+    });
+    
     // Merge with existing groups to avoid duplicates
     const existingGroups = loadCachedGroups();
     
@@ -178,7 +208,7 @@ export const useChromeExtension = () => {
     });
     
     // Add or update with new groups
-    validGroups.forEach(group => {
+    sanitizedGroups.forEach(group => {
       // Only add if URL is valid
       if (group.url && group.url.includes('facebook.com')) {
         groupMap.set(group.url, {
@@ -392,7 +422,7 @@ export const useChromeExtension = () => {
         });
 
         chrome.scripting.executeScript({
-          target: { tabId: tabId },
+          target: { tabId },
           func: extractAndSendGroups
         });
         
@@ -479,17 +509,44 @@ export const useChromeExtension = () => {
             name = link.textContent?.trim() || 'קבוצה ללא שם';
           }
           
-          const fullHref = href.startsWith('http') 
-            ? href 
-            : `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
+          // Ensure we have a full URL, not a relative one
+          let fullHref = href;
+          if (!href.startsWith('http')) {
+            fullHref = `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
+          }
+          
+          // Clean up the URL to make sure it's a valid group URL
+          try {
+            const urlObj = new URL(fullHref);
             
-          return { 
-            name, 
-            href: fullHref,
-            // Add additional metadata that might be useful
-            extracted: true,
-            timestamp: new Date().toISOString()
-          };
+            // Remove any query parameters or fragments
+            urlObj.search = '';
+            urlObj.hash = '';
+            
+            // Get the actual group ID/name from the path
+            const pathParts = urlObj.pathname.split('/');
+            if (pathParts.length >= 3 && pathParts[1] === 'groups') {
+              // Keep only the base group path without trailing elements
+              const groupId = pathParts[2].split('?')[0].split('#')[0];
+              urlObj.pathname = `/groups/${groupId}`;
+            }
+            
+            return { 
+              name, 
+              href: urlObj.toString(),
+              // Add additional metadata that might be useful
+              extracted: true,
+              timestamp: new Date().toISOString()
+            };
+          } catch (e) {
+            // Fallback if URL parsing fails
+            return { 
+              name, 
+              href: fullHref,
+              extracted: true,
+              timestamp: new Date().toISOString()
+            };
+          }
         }
         return null;
       })
@@ -606,16 +663,40 @@ export const useChromeExtension = () => {
               name = 'קבוצה ללא שם';
             }
             
-            const fullHref = href.startsWith('http') 
-              ? href 
-              : `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
+            // Ensure we have a full URL, not a relative one
+            let fullHref = href;
+            if (!href.startsWith('http')) {
+              fullHref = `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
+            }
+            
+            // Clean up the URL
+            try {
+              const urlObj = new URL(fullHref);
+              urlObj.search = '';
+              urlObj.hash = '';
               
-            return { 
-              name, 
-              href: fullHref,
-              extracted: true,
-              timestamp: new Date().toISOString()
-            };
+              // Get the group ID/name from the path
+              const pathParts = urlObj.pathname.split('/');
+              if (pathParts.length >= 3 && pathParts[1] === 'groups') {
+                const groupId = pathParts[2].split('?')[0].split('#')[0];
+                urlObj.pathname = `/groups/${groupId}`;
+              }
+              
+              return { 
+                name, 
+                href: urlObj.toString(),
+                extracted: true,
+                timestamp: new Date().toISOString()
+              };
+            } catch (e) {
+              // Fallback if URL parsing fails
+              return { 
+                name, 
+                href: fullHref,
+                extracted: true,
+                timestamp: new Date().toISOString()
+              };
+            }
           }
           return null;
         })
@@ -778,3 +859,4 @@ export const useChromeExtension = () => {
     clearLogs
   };
 };
+

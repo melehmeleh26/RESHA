@@ -38,8 +38,5 @@
   "background": {
     "service_worker": "js/background.js",
     "type": "module"
-  },
-  "chrome_url_overrides": {
-    "newtab": "index.html"
   }
 }
