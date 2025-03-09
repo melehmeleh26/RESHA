@@ -158,7 +158,7 @@ const GroupsList = ({
               onClick={handleRefreshGroups}
               disabled={isFetching || isLoading}
             >
-              <ListFilter className={`ml-2 h-4 w-4 ${(isFetching || isLoading) ? "animate-spin" : ""}`} />
+              <RefreshCw className={`ml-2 h-4 w-4 ${(isFetching || isLoading) ? "animate-spin" : ""}`} />
               רענן רשימת קבוצות
             </Button>
           </div>
