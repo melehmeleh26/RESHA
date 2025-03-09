@@ -1,34 +1,79 @@
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Link } from "react-router-dom";
-import { AlertCircle } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FacebookIcon, RefreshCw } from "lucide-react";
 
-const InstructionsCard = () => {
+interface InstructionsCardProps {
+  isExtension: boolean;
+  onCheckConnection: () => void;
+  onFetchGroups: () => void;
+  isLoading: boolean;
+}
+
+const InstructionsCard = ({
+  isExtension,
+  onCheckConnection,
+  onFetchGroups,
+  isLoading,
+}: InstructionsCardProps) => {
   return (
-    <Card className="border border-blue-100 bg-blue-50 shadow-sm dark:border-blue-900 dark:bg-blue-900/20 animate-fade-in animate-delay-200">
+    <Card className="border-blue-100 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/20">
       <CardHeader>
-        <CardTitle className="text-lg">הוראות שימוש בבדיקות</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <FacebookIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          הנחיות להתחברות לפייסבוק
+        </CardTitle>
+        <CardDescription>
+          כדי לבדוק את יכולת הפרסום בקבוצות, עליך להיות מחובר לפייסבוק
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <ol className="list-decimal list-inside space-y-2 text-sm">
-          <li>וודא שהתוסף מותקן ופעיל (אייקון GroupsFlow בסרגל התוספים)</li>
-          <li>לחץ על "רענן קבוצות" כדי לקבל את רשימת הקבוצות הזמינות מפייסבוק</li>
-          <li>במידה ואין קבוצות, פתח לשונית נפרדת בדפדפן עם פייסבוק וגלול בעמוד הקבוצות שלך</li>
-          <li>בחר את הקבוצה בה תרצה לבצע את הבדיקה מהרשימה</li>
-          <li>בחר את מצב הבדיקה - מילוי בלבד או פרסום מלא</li>
-          <li>הזן את תוכן הפוסט לבדיקה</li>
-          <li>לחץ על "פרסם עכשיו" - המערכת תפתח פייסבוק ברקע ותסגור אוטומטית לאחר הפעולה</li>
-          <li>ניתן לראות את הסטטיסטיקות והיסטוריית הפעולות <Link to="/logs" className="text-primary hover:underline">ביומן הפעילות</Link></li>
-        </ol>
-        
-        <Alert variant="warning" className="mt-4 bg-amber-50 border-amber-200 text-amber-800">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription className="text-xs">
-            <strong>שים לב:</strong> התוסף צריך להיות מסוגל לגשת לקבוצות הפייסבוק שלך. אם אתה לא רואה את הקבוצות, 
-            נסה לפתוח את עמוד הקבוצות של פייסבוק בלשונית נפרדת וודא שאתה מחובר לחשבון שלך.
-          </AlertDescription>
-        </Alert>
+      <CardContent className="space-y-4">
+        {!isExtension ? (
+          <Alert variant="destructive">
+            <AlertTitle>תוסף הדפדפן לא פעיל</AlertTitle>
+            <AlertDescription>
+              יש להתקין את תוסף הדפדפן כדי להשתמש באפשרויות הפרסום
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <>
+            <ol className="ml-6 list-decimal space-y-2 text-sm text-muted-foreground">
+              <li>פתח את הדפדפן והיכנס לחשבון הפייסבוק שלך</li>
+              <li>ודא שהינך חבר בקבוצות הפייסבוק בהן תרצה לפרסם</li>
+              <li>לחץ על "בדוק חיבור" כדי לאמת את החיבור לפייסבוק</li>
+              <li>לחץ על "טען קבוצות" כדי לקבל את רשימת הקבוצות שלך</li>
+              <li>צור פוסט לבדיקה ולחץ על "שלח" כדי לבדוק את התהליך</li>
+            </ol>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onCheckConnection}
+                disabled={isLoading}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`}
+                />
+                בדוק חיבור
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onFetchGroups}
+                disabled={isLoading}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`}
+                />
+                טען קבוצות
+              </Button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

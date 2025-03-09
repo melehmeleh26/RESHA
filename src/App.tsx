@@ -21,10 +21,20 @@ const queryClient = new QueryClient();
 const App = () => {
   // Set up action click handler to open in new tab
   useEffect(() => {
-    if (typeof chrome !== 'undefined' && chrome.action) {
-      chrome.action.onClicked.addListener(() => {
-        chrome.tabs.create({ url: 'index.html' });
-      });
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
+      // Only execute this in a Chrome extension environment
+      // Listen for clicks on the extension icon
+      try {
+        if ('action' in chrome) {
+          chrome.action.onClicked.addListener(() => {
+            if ('tabs' in chrome && 'create' in chrome.tabs) {
+              chrome.tabs.create({ url: 'index.html' });
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error setting up Chrome extension action handler:', error);
+      }
     }
   }, []);
 
