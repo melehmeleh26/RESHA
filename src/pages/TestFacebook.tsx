@@ -34,12 +34,15 @@ const TestFacebook = () => {
     handleRefreshGroups();
     
     // Set up interval to check for groups every 5 seconds if none are found
+    // and we're running as an extension
     const intervalId = setInterval(() => {
       if (availableGroups.length === 0 && isExtension) {
         console.log("No groups found, attempting to fetch again...");
         fetchUserGroups();
-      } else {
+      } else if (availableGroups.length > 0) {
+        // Clear the interval once we have groups
         clearInterval(intervalId);
+        console.log(`Found ${availableGroups.length} groups, stopping auto-refresh`);
       }
     }, 5000);
     
@@ -61,9 +64,11 @@ const TestFacebook = () => {
       return;
     }
     
+    // Fetch groups from Facebook
     fetchUserGroups();
     
-    // Set a timeout to hide the loading indicator after 3 seconds
+    // Set a timeout to hide the loading indicator after 5 seconds
+    // but don't affect the actual loading state from the hook
     setTimeout(() => {
       setIsFetching(false);
       
@@ -75,21 +80,11 @@ const TestFacebook = () => {
         });
       } else {
         toast({
-          title: "לא נמצאו קבוצות",
-          description: "פתח את פייסבוק בלשונית נפרדת ונסה שוב",
+          title: "מנסה למשוך קבוצות",
+          description: "פותח דף קבוצות ומנסה למשוך נתונים",
         });
-        
-        // Try to open Facebook groups page if no groups were found
-        if (isExtension && typeof chrome !== 'undefined' && chrome.tabs) {
-          try {
-            chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/", active: false });
-            addLogEntry('פתיחת דף קבוצות', 'info', 'נפתח דף קבוצות פייסבוק בלשונית חדשה');
-          } catch (error) {
-            console.error("Error opening Facebook groups page:", error);
-          }
-        }
       }
-    }, 3000);
+    }, 5000);
   };
 
   return (

@@ -1,6 +1,11 @@
+
 import { useState, useEffect } from 'react';
 import { FacebookStatus, FacebookGroup, FacebookGroupStatus, TestPostResponse, TestPostOptions, LogEntry } from '@/types/facebook';
 import { toast } from '@/hooks/use-toast';
+
+// Local storage key for cached groups
+const STORED_GROUPS_KEY = 'facebook_groups_cache';
+const GROUPS_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
 // Check if running in a Chrome extension environment
 const isChromeExtension = () => {
@@ -29,6 +34,9 @@ export const useChromeExtension = () => {
       return;
     }
 
+    // Check for cached groups first
+    loadCachedGroups();
+
     // Set up listener for messages from content script
     const messageListener = (message: any) => {
       console.log('Extension hook received message:', message);
@@ -51,9 +59,7 @@ export const useChromeExtension = () => {
             status: group.status || 'inactive',
             lastChecked: group.lastChecked || new Date().toISOString()
           }));
-          setAvailableGroups(typedGroups);
-          setIsLoading(false);
-          addLogEntry('קבוצות התקבלו', 'info', `נמצאו ${typedGroups.length} קבוצות פייסבוק`);
+          processAndStoreGroups(typedGroups);
           
           if (typedGroups.length > 0) {
             toast({
@@ -74,9 +80,7 @@ export const useChromeExtension = () => {
           }));
           
           if (processedGroups.length > 0) {
-            setAvailableGroups(processedGroups);
-            setIsLoading(false);
-            addLogEntry('קבוצות התקבלו', 'success', `נמצאו ${processedGroups.length} קבוצות פייסבוק`);
+            processAndStoreGroups(processedGroups);
             
             toast({
               title: "קבוצות נטענו בהצלחה",
@@ -127,9 +131,6 @@ export const useChromeExtension = () => {
       }
     });
 
-    // Request list of Facebook groups from the background script
-    fetchUserGroups();
-
     // Get stored logs
     chrome.runtime.sendMessage({ type: 'GET_LOGS' }, (response) => {
       if (response && response.logs) {
@@ -142,6 +143,92 @@ export const useChromeExtension = () => {
       chrome.runtime.onMessage.removeListener(messageListener);
     };
   }, []);
+
+  // Store groups in localStorage with timestamp
+  const processAndStoreGroups = (groups: FacebookGroup[]) => {
+    // Merge with existing groups to avoid duplicates
+    const existingGroups = loadCachedGroups();
+    
+    // Create a map of existing groups by URL for quick lookup
+    const groupMap = new Map<string, FacebookGroup>();
+    
+    // Add existing groups to map
+    existingGroups.forEach(group => {
+      groupMap.set(group.url, group);
+    });
+    
+    // Add or update with new groups
+    groups.forEach(group => {
+      // Only add if URL is valid
+      if (group.url && group.url.includes('facebook.com')) {
+        groupMap.set(group.url, {
+          ...group,
+          lastChecked: new Date().toISOString()
+        });
+      }
+    });
+    
+    // Convert map back to array
+    const mergedGroups = Array.from(groupMap.values());
+    
+    // Store groups with timestamp
+    const storageData = {
+      groups: mergedGroups,
+      timestamp: Date.now()
+    };
+    
+    try {
+      localStorage.setItem(STORED_GROUPS_KEY, JSON.stringify(storageData));
+      console.log(`Stored ${mergedGroups.length} groups in localStorage`);
+      
+      // Update state
+      setAvailableGroups(mergedGroups);
+      setIsLoading(false);
+      
+      addLogEntry(
+        'קבוצות נשמרו במטמון', 
+        'success', 
+        `נשמרו ${mergedGroups.length} קבוצות פייסבוק במטמון המקומי`
+      );
+    } catch (error) {
+      console.error('Error storing groups in localStorage:', error);
+      addLogEntry('שגיאה בשמירת קבוצות', 'error', 'לא ניתן היה לשמור את הקבוצות במטמון המקומי');
+    }
+  };
+
+  // Load groups from localStorage
+  const loadCachedGroups = (): FacebookGroup[] => {
+    try {
+      const cachedData = localStorage.getItem(STORED_GROUPS_KEY);
+      if (!cachedData) return [];
+      
+      const { groups, timestamp } = JSON.parse(cachedData);
+      
+      // Check if cache is expired
+      if (Date.now() - timestamp > GROUPS_CACHE_EXPIRY) {
+        console.log('Cached groups expired, clearing cache');
+        localStorage.removeItem(STORED_GROUPS_KEY);
+        return [];
+      }
+      
+      console.log(`Loaded ${groups.length} groups from localStorage cache`);
+      
+      // Update state with cached groups
+      setAvailableGroups(groups);
+      
+      addLogEntry(
+        'נטענו קבוצות מהמטמון', 
+        'info', 
+        `נטענו ${groups.length} קבוצות פייסבוק מהמטמון המקומי`
+      );
+      
+      return groups;
+    } catch (error) {
+      console.error('Error loading groups from localStorage:', error);
+      addLogEntry('שגיאה בטעינת קבוצות', 'error', 'לא ניתן היה לטעון את הקבוצות מהמטמון המקומי');
+      return [];
+    }
+  };
 
   // Function to fetch user's Facebook groups
   const fetchUserGroups = () => {
@@ -170,9 +257,7 @@ export const useChromeExtension = () => {
           lastChecked: group.lastChecked || new Date().toISOString()
         }));
         
-        setAvailableGroups(typedGroups);
-        setIsLoading(false);
-        addLogEntry('קבוצות התקבלו', 'success', `התקבלו ${typedGroups.length} קבוצות פייסבוק`);
+        processAndStoreGroups(typedGroups);
         
         if (typedGroups.length > 0) {
           toast({
@@ -200,276 +285,243 @@ export const useChromeExtension = () => {
       return;
     }
     
-    chrome.tabs.query({ active: true, url: "*://*.facebook.com/*" }, (tabs) => {
+    // Use the specific URL requested by the user
+    const facebookGroupsUrl = "https://www.facebook.com/groups/joins/?nav_source=tab&ordering=viewer_added";
+    
+    // First check if there's already a Facebook tab open
+    chrome.tabs.query({ url: "*://*.facebook.com/*" }, (tabs) => {
       if (tabs.length > 0) {
         // We have Facebook tabs open - try to inject script to get groups
-        tabs.forEach(tab => {
-          if (tab.id) {
-            try {
-              toast({
-                title: "מנסה למשוך קבוצות",
-                description: "מנסה לחלץ קבוצות מדף פייסבוק הפתוח",
-              });
-
-              chrome.scripting.executeScript({
-                target: { tabId: tab.id },
-                func: () => {
-                  function extractAndSendGroups() {
-                    console.log('Starting Facebook group extraction...');
-                    
-                    // Find elements matching groups
-                    const groupElements = Array.from(document.querySelectorAll('a[href*="/groups/"]'));
-                    
-                    // Filter and process groups
-                    const groups = groupElements
-                      .map(link => {
-                        const href = link.getAttribute('href');
-                        if (!href) return null;
-                        
-                        // Only get real group links (exclude group feeds, etc)
-                        if (href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+\/?$/) || 
-                            href.match(/\/groups\/[0-9a-zA-Z\.\-]+\/?$/)) {
-                          
-                          // Get group name from nearby elements
-                          let name = '';
-                          
-                          // Try to find text within the link
-                          const spanElements = link.querySelectorAll('span');
-                          for (const span of spanElements) {
-                            const text = span.textContent?.trim();
-                            if (text && text.length > 2) {
-                              name = text;
-                              break;
-                            }
-                          }
-                          
-                          // Fallback to link text if no name found
-                          if (!name) {
-                            name = link.textContent?.trim() || 'קבוצה ללא שם';
-                          }
-                          
-                          const fullHref = href.startsWith('http') 
-                            ? href 
-                            : `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
-                            
-                          return { 
-                            name, 
-                            href: fullHref,
-                            // Add additional metadata that might be useful
-                            extracted: true,
-                            timestamp: new Date().toISOString()
-                          };
-                        }
-                        return null;
-                      })
-                      .filter(Boolean);
-                    
-                    // Remove duplicates based on href
-                    const uniqueGroups = groups.reduce((acc: any[], group: any) => {
-                      if (!acc.some(g => g.href === group.href)) {
-                        acc.push(group);
-                      }
-                      return acc;
-                    }, []);
-                    
-                    console.log(`Found ${uniqueGroups.length} Facebook groups`);
-                    
-                    // Send to background script
-                    chrome.runtime.sendMessage({
-                      type: 'FACEBOOK_GROUPS_DATA',
-                      data: uniqueGroups
-                    });
-                  }
-                  
-                  // Try extraction immediately
-                  extractAndSendGroups();
-                  
-                  // Set up observer to catch dynamically loaded content
-                  const observer = new MutationObserver(() => {
-                    setTimeout(extractAndSendGroups, 500);
-                  });
-                  
-                  observer.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                  });
-                  
-                  // Set up a periodic check to keep extracting groups
-                  // as the user scrolls and more content loads
-                  setInterval(extractAndSendGroups, 2000);
-                  
-                  return true;
-                }
-              });
-              
-              addLogEntry('מנסה זיהוי קבוצות מדף פייסבוק', 'info', `מנסה לחלץ קבוצות מדף פייסבוק פתוח`);
-            } catch (error) {
-              console.error('Error executing script:', error);
-              addLogEntry('שגיאת הרצת סקריפט', 'error', 'נכשל בהרצת סקריפט איסוף קבוצות');
-              setIsLoading(false);
-            }
-          }
-        });
-      } else {
-        // No Facebook tabs open - open one and try to get groups
-        try {
-          toast({
-            title: "פותח דף פייסבוק",
-            description: "פותח דף קבוצות פייסבוק לחילוץ נתונים",
-          });
+        let activeTabId: number | undefined;
+        
+        // First try to find a tab that's already on the groups page
+        const groupsTab = tabs.find(tab => tab.url?.includes('/groups/joins/'));
+        
+        if (groupsTab && groupsTab.id) {
+          activeTabId = groupsTab.id;
           
-          chrome.tabs.create({ url: "https://www.facebook.com/groups/feed/", active: false }, (tab) => {
-            if (!tab || !tab.id) {
-              addLogEntry('נכשל בפתיחת דף פייסבוק', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
-              setIsLoading(false);
-              return;
-            }
-            
-            addLogEntry('נפתח דף קבוצות פייסבוק', 'info', 'נפתח דף קבוצות פייסבוק לחילוץ נתונים');
-            
-            // Wait for the page to load then inject script
-            setTimeout(() => {
-              if (tab.id) {
-                try {
-                  chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    func: () => {
-                      function extractFacebookGroups() {
-                        // Find all group elements - focus on elements more specific to group items
-                        const groupElements = Array.from(document.querySelectorAll([
-                          // Different Facebook selectors to try to find groups
-                          'a[href*="/groups/"][role="link"]',
-                          'a[href*="/groups/"][aria-label]',
-                          'a[href*="/groups/"]',
-                          // Try to get groups from the sidebar
-                          '[role="navigation"] a[href*="/groups/"]',
-                          // Try to get groups from feeds
-                          '[role="feed"] a[href*="/groups/"]',
-                          // Try to find by content
-                          'a[href*="/groups/"]:not([href*="feed"])'
-                        ].join(', ')));
-                        
-                        console.log(`Found ${groupElements.length} potential group elements`);
-                        
-                        // Extract information from these elements
-                        const groups = groupElements
-                          .map(link => {
-                            const href = link.getAttribute('href');
-                            if (!href) return null;
-                            
-                            // Check if it's a valid group URL
-                            if (href.match(/\/groups\/[0-9a-zA-Z\.\-]+\/?$/) || 
-                                href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+\/?$/)) {
-                              
-                              // Try to extract the name
-                              let name = '';
-                              
-                              // Check for aria-label
-                              const ariaLabel = link.getAttribute('aria-label');
-                              if (ariaLabel) name = ariaLabel;
-                              
-                              // Try to find text within spans
-                              if (!name) {
-                                const spans = link.querySelectorAll('span');
-                                for (const span of spans) {
-                                  const text = span.textContent?.trim();
-                                  if (text && text.length > 2) {
-                                    name = text;
-                                    break;
-                                  }
-                                }
-                              }
-                              
-                              // Fallback to link text
-                              if (!name) {
-                                name = link.textContent?.trim() || 'קבוצה ללא שם';
-                              }
-                              
-                              // Build full URL
-                              const fullHref = href.startsWith('http') 
-                                ? href 
-                                : `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
-                              
-                              return { 
-                                name, 
-                                href: fullHref,
-                                // Add metadata
-                                extracted: true,
-                                source: 'facebook-groups-page',
-                                timestamp: new Date().toISOString()
-                              };
-                            }
-                            return null;
-                          })
-                          .filter(Boolean);
-                        
-                        // Remove duplicates
-                        const uniqueGroups = groups.reduce((acc: any[], group: any) => {
-                          if (!acc.some(g => g.href === group.href)) {
-                            acc.push(group);
-                          }
-                          return acc;
-                        }, []);
-                        
-                        console.log(`Extracted ${uniqueGroups.length} unique Facebook groups`);
-                        
-                        // Send to extension
-                        chrome.runtime.sendMessage({
-                          type: 'FACEBOOK_GROUPS_DATA',
-                          data: uniqueGroups
-                        });
-                        
-                        // Scroll to load more content
-                        window.scrollTo(0, window.scrollY + 500);
-                      }
-                      
-                      // Run extraction after delay to let page load
-                      setTimeout(extractFacebookGroups, 2000);
-                      
-                      // Set up interval to extract periodically
-                      const extractInterval = setInterval(extractFacebookGroups, 3000);
-                      
-                      // Set up mutation observer for dynamic content
-                      const observer = new MutationObserver(() => {
-                        extractFacebookGroups();
-                      });
-                      
-                      observer.observe(document.body, {
-                        childList: true,
-                        subtree: true
-                      });
-                      
-                      // Auto-scroll to load more content
-                      const scrollInterval = setInterval(() => {
-                        window.scrollTo(0, window.scrollY + 300);
-                        // Stop after some time to avoid infinite scrolling
-                      }, 2000);
-                      
-                      // Clean up after 30 seconds
-                      setTimeout(() => {
-                        clearInterval(extractInterval);
-                        clearInterval(scrollInterval);
-                        observer.disconnect();
-                      }, 30000);
-                      
-                      return true;
-                    }
-                  });
-                } catch (error) {
-                  console.error('Error executing script:', error);
-                  addLogEntry('שגיאת הרצת סקריפט', 'error', 'נכשל בהרצת סקריפט איסוף קבוצות');
-                  setIsLoading(false);
-                }
-              }
-            }, 3000);
+          // Activate this tab to ensure it's in view
+          chrome.tabs.update(activeTabId, { active: true }, () => {
+            injectScriptToTab(activeTabId);
           });
-        } catch (error) {
-          console.error('Error creating tab:', error);
-          addLogEntry('שגיאת פתיחת לשונית', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
-          setIsLoading(false);
+        } else {
+          // If not found, use the first Facebook tab and navigate it to the groups page
+          activeTabId = tabs[0].id;
+          
+          if (activeTabId) {
+            chrome.tabs.update(activeTabId, { 
+              active: true,
+              url: facebookGroupsUrl
+            }, () => {
+              // Wait for navigation to complete
+              setTimeout(() => {
+                injectScriptToTab(activeTabId);
+              }, 3000);
+            });
+          }
         }
+      } else {
+        // No Facebook tabs open - open one to the specific URL
+        createNewFacebookTab();
       }
     });
+    
+    // Function to create a new Facebook tab
+    function createNewFacebookTab() {
+      try {
+        toast({
+          title: "פותח דף פייסבוק",
+          description: "פותח דף קבוצות פייסבוק לחילוץ נתונים",
+        });
+        
+        chrome.tabs.create({ url: facebookGroupsUrl, active: false }, (tab) => {
+          if (!tab || !tab.id) {
+            addLogEntry('נכשל בפתיחת דף פייסבוק', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
+            setIsLoading(false);
+            return;
+          }
+          
+          addLogEntry('נפתח דף קבוצות פייסבוק', 'info', 'נפתח דף קבוצות פייסבוק לחילוץ נתונים');
+          
+          // Wait for the page to load then inject script
+          setTimeout(() => {
+            injectScriptToTab(tab.id);
+          }, 3000);
+        });
+      } catch (error) {
+        console.error('Error creating tab:', error);
+        addLogEntry('שגיאת פתיחת לשונית', 'error', 'לא ניתן היה לפתוח לשונית פייסבוק חדשה');
+        setIsLoading(false);
+      }
+    }
+    
+    // Function to inject script to a specific tab
+    function injectScriptToTab(tabId: number | undefined) {
+      if (!tabId) {
+        console.error('No valid tab ID provided');
+        setIsLoading(false);
+        return;
+      }
+      
+      try {
+        toast({
+          title: "מחלץ קבוצות",
+          description: "מחלץ קבוצות מדף פייסבוק",
+        });
+
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          func: () => {
+            function extractAndSendGroups() {
+              console.log('Starting Facebook group extraction...');
+              
+              // Find elements matching groups
+              const groupElements = Array.from(document.querySelectorAll([
+                // Group items in the joined groups page
+                'a[href*="/groups/"][role="link"]',
+                'div[role="article"] a[href*="/groups/"]',
+                // Group name headers
+                'h2 a[href*="/groups/"]',
+                // Any other link to a group
+                'a[href*="/groups/"][aria-label]',
+                'a[href*="/groups/"]:not([href*="feed"])',
+                // Specific to the groups/joins page
+                'div[data-visualcompletion="ignore-dynamic"] a[href*="/groups/"]'
+              ].join(', ')));
+              
+              // Filter and process groups
+              const groups = groupElements
+                .map(link => {
+                  const href = link.getAttribute('href');
+                  if (!href) return null;
+                  
+                  // Only get real group links (exclude group feeds, etc)
+                  if (href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+\/?$/) || 
+                      href.match(/\/groups\/[0-9a-zA-Z\.\-]+\/?$/)) {
+                    
+                    // Get group name from nearby elements
+                    let name = '';
+                    
+                    // Try to get from aria-label
+                    const ariaLabel = link.getAttribute('aria-label');
+                    if (ariaLabel) {
+                      name = ariaLabel;
+                    } else {
+                      // Try to find text within the link
+                      const spanElements = link.querySelectorAll('span');
+                      for (const span of spanElements) {
+                        const text = span.textContent?.trim();
+                        if (text && text.length > 2) {
+                          name = text;
+                          break;
+                        }
+                      }
+                      
+                      // If still no name, try parent elements
+                      if (!name) {
+                        // Look for headings or strong text in parent elements
+                        let parent = link.parentElement;
+                        for (let i = 0; i < 3 && parent && !name; i++) {
+                          const heading = parent.querySelector('h1, h2, h3, h4, strong');
+                          if (heading && heading.textContent) {
+                            name = heading.textContent.trim();
+                          }
+                          parent = parent.parentElement;
+                        }
+                      }
+                    }
+                    
+                    // Fallback to link text if no name found
+                    if (!name) {
+                      name = link.textContent?.trim() || 'קבוצה ללא שם';
+                    }
+                    
+                    const fullHref = href.startsWith('http') 
+                      ? href 
+                      : `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
+                      
+                    return { 
+                      name, 
+                      href: fullHref,
+                      // Add additional metadata that might be useful
+                      extracted: true,
+                      timestamp: new Date().toISOString()
+                    };
+                  }
+                  return null;
+                })
+                .filter(Boolean);
+              
+              // Remove duplicates based on href
+              const uniqueGroups = groups.reduce((acc: any[], group: any) => {
+                if (!acc.some(g => g.href === group.href)) {
+                  acc.push(group);
+                }
+                return acc;
+              }, []);
+              
+              console.log(`Found ${uniqueGroups.length} Facebook groups`);
+              
+              // Send to background script
+              chrome.runtime.sendMessage({
+                type: 'FACEBOOK_GROUPS_DATA',
+                data: uniqueGroups
+              });
+              
+              return uniqueGroups.length;
+            }
+            
+            // Initial extraction
+            let foundGroups = extractAndSendGroups();
+            
+            // Set up observer to catch dynamically loaded content
+            const observer = new MutationObserver(() => {
+              extractAndSendGroups();
+            });
+            
+            observer.observe(document.body, {
+              childList: true,
+              subtree: true
+            });
+            
+            // Auto-scroll to load more content
+            let scrollCount = 0;
+            const maxScrolls = 10;
+            
+            const scrollInterval = setInterval(() => {
+              window.scrollTo(0, document.body.scrollHeight);
+              scrollCount++;
+              console.log(`Auto-scroll ${scrollCount}/${maxScrolls}`);
+              
+              // Extract groups after each scroll
+              setTimeout(() => {
+                const count = extractAndSendGroups();
+                console.log(`Found ${count} groups after scroll ${scrollCount}`);
+              }, 1000);
+              
+              if (scrollCount >= maxScrolls) {
+                clearInterval(scrollInterval);
+                console.log('Finished auto-scrolling');
+                
+                // One final extraction
+                setTimeout(() => {
+                  extractAndSendGroups();
+                  observer.disconnect();
+                }, 2000);
+              }
+            }, 2000);
+            
+            return true;
+          }
+        });
+        
+        addLogEntry('מחלץ קבוצות', 'info', `מחלץ קבוצות מדף פייסבוק`);
+      } catch (error) {
+        console.error('Error executing script:', error);
+        addLogEntry('שגיאת הרצת סקריפט', 'error', 'נכשל בהרצת סקריפט איסוף קבוצות');
+        setIsLoading(false);
+      }
+    }
   };
 
   // Function to send a test post request
