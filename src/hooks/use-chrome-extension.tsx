@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { FacebookStatus, FacebookGroup, FacebookGroupStatus, TestPostResponse, TestPostOptions, LogEntry } from '@/types/facebook';
 import { toast } from '@/hooks/use-toast';
@@ -353,9 +354,10 @@ export const useChromeExtension = () => {
           activeTabId = groupsTab.id;
           
           // Activate this tab to ensure it's in view
-          chrome.tabs.update(activeTabId, { active: true }, () => {
-            injectScriptToTab(activeTabId);
-          });
+          chrome.tabs.update(activeTabId, { active: true });
+          setTimeout(() => {
+            if (activeTabId) injectScriptToTab(activeTabId);
+          }, 1000);
         } else {
           // If not found, use the first Facebook tab and navigate it to the groups page
           activeTabId = tabs[0].id;
@@ -364,12 +366,12 @@ export const useChromeExtension = () => {
             chrome.tabs.update(activeTabId, { 
               active: true,
               url: facebookGroupsUrl
-            }, () => {
-              // Wait for navigation to complete
-              setTimeout(() => {
-                injectScriptToTab(activeTabId);
-              }, 3000);
             });
+            
+            // Wait for navigation to complete
+            setTimeout(() => {
+              if (activeTabId) injectScriptToTab(activeTabId);
+            }, 3000);
           }
         }
       } else {
@@ -397,7 +399,7 @@ export const useChromeExtension = () => {
           
           // Wait for the page to load then inject script
           setTimeout(() => {
-            injectScriptToTab(tab.id);
+            if (tab.id) injectScriptToTab(tab.id);
           }, 3000);
         });
       } catch (error) {
@@ -439,60 +441,87 @@ export const useChromeExtension = () => {
   function extractAndSendGroups() {
     console.log('Starting Facebook group extraction...');
     
-    // Find elements matching groups
-    const groupElements = Array.from(document.querySelectorAll([
-      // Group items in the joined groups page
-      'a[href*="/groups/"][role="link"]',
-      'div[role="article"] a[href*="/groups/"]',
-      // Group name headers
-      'h2 a[href*="/groups/"]',
-      // Any other link to a group
-      'a[href*="/groups/"][aria-label]',
-      'a[href*="/groups/"]:not([href*="feed"])',
-      // Specific to the groups/joins page
-      'div[data-visualcompletion="ignore-dynamic"] a[href*="/groups/"]',
-      // Additional selectors
-      'a[href^="https://www.facebook.com/groups/"]',
-      'a[href^="/groups/"]',
-      // More aggressive selectors
-      '[role="main"] a[href*="/groups/"]',
-      '[role="feed"] a[href*="/groups/"]'
-    ].join(', ')));
-    
-    // Filter and process groups
-    const groups = groupElements
-      .map(link => {
-        const href = link.getAttribute('href');
-        if (!href) return null;
-        
-        // Only get real group links (exclude group feeds, etc)
-        if (href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+\/?$/) || 
-            href.match(/\/groups\/[0-9a-zA-Z\.\-]+\/?$/) ||
-            // Additional patterns to match more groups
-            href.match(/facebook\.com\/groups\/[0-9a-zA-Z\.\-]+/) ||
-            href.match(/\/groups\/[0-9a-zA-Z\.\-]+/)) {
+    function extractGroups() {
+      // Find elements matching groups
+      const groupElements = Array.from(document.querySelectorAll([
+        // Group items in the joined groups page
+        '[role="main"] a[href*="/groups/"][role="link"]',
+        '[role="main"] div[role="article"] a[href*="/groups/"]',
+        // Group name headers
+        '[role="main"] h2 a[href*="/groups/"]',
+        // Any other link to a group
+        '[role="main"] a[href*="/groups/"][aria-label]',
+        '[role="main"] a[href*="/groups/"]:not([href*="feed"])',
+        // Specific to the groups/joins page
+        '[role="main"] div[data-visualcompletion="ignore-dynamic"] a[href*="/groups/"]',
+        // Additional selectors
+        '[role="main"] a[href^="https://www.facebook.com/groups/"]',
+        '[role="main"] a[href^="/groups/"]',
+        // For group cards
+        '[role="main"] div[role="article"] a[href*="/groups/"]',
+        // More aggressive selectors for group names
+        '[role="listitem"] a[href*="/groups/"]'
+      ].join(', ')));
+      
+      console.log(`Found ${groupElements.length} potential group elements`);
+      
+      // Filter and process groups
+      const groups = groupElements
+        .map(link => {
+          const href = link.getAttribute('href');
+          if (!href) return null;
           
-          // Get group name from nearby elements
+          // Only include real group links (exclude feeds, about pages, etc.)
+          if (!href.includes('/groups/') || 
+              href.includes('/groups/feed') || 
+              href.includes('/about') || 
+              href.includes('/members') ||
+              href.includes('/permalink')) {
+            return null;
+          }
+          
+          // Extract group ID/name from the URL
+          let groupId = '';
+          const urlParts = href.split('/groups/');
+          if (urlParts.length > 1) {
+            groupId = urlParts[1].split('/')[0].split('?')[0];
+          }
+          
+          if (!groupId) return null;
+          
+          // Get group name from the element
           let name = '';
           
-          // Try to get from aria-label
+          // Try different strategies to find the name
           const ariaLabel = link.getAttribute('aria-label');
-          if (ariaLabel) {
+          if (ariaLabel && ariaLabel.length > 2) {
             name = ariaLabel;
+          } else if (link.textContent && link.textContent.trim().length > 2) {
+            name = link.textContent.trim();
           } else {
-            // Try to find text within the link
-            const spanElements = link.querySelectorAll('span');
-            for (const span of spanElements) {
-              const text = span.textContent?.trim();
-              if (text && text.length > 2) {
-                name = text;
-                break;
+            // Look for nearby headings or strong text
+            const article = link.closest('[role="article"]');
+            if (article) {
+              const heading = article.querySelector('h1, h2, h3, h4, strong, span[dir="auto"]');
+              if (heading && heading.textContent) {
+                name = heading.textContent.trim();
               }
             }
             
-            // If still no name, try parent elements
+            // If still no name, look within the link itself
             if (!name) {
-              // Look for headings or strong text in parent elements
+              const spanElements = link.querySelectorAll('span');
+              for (const span of spanElements) {
+                const text = span.textContent?.trim();
+                if (text && text.length > 2) {
+                  name = text;
+                  break;
+                }
+              }
+            }
+            
+            // Look in parent elements if still no name
+            if (!name) {
               let parent = link.parentElement;
               for (let i = 0; i < 3 && parent && !name; i++) {
                 const heading = parent.querySelector('h1, h2, h3, h4, strong');
@@ -504,69 +533,86 @@ export const useChromeExtension = () => {
             }
           }
           
-          // Fallback to link text if no name found
-          if (!name) {
-            name = link.textContent?.trim() || 'קבוצה ללא שם';
+          // Fallback to general identifier if no name found
+          if (!name || name.length < 2) {
+            name = 'קבוצת פייסבוק ' + groupId;
           }
           
-          // Ensure we have a full URL, not a relative one
-          let fullHref = href;
-          if (!href.startsWith('http')) {
-            fullHref = `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
+          // Ensure we have a full URL to the group
+          let fullUrl = '';
+          if (href.startsWith('http')) {
+            fullUrl = href;
+          } else {
+            fullUrl = `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
           }
           
-          // Clean up the URL to make sure it's a valid group URL
+          // Clean up the URL
           try {
-            const urlObj = new URL(fullHref);
-            
-            // Remove any query parameters or fragments
+            const urlObj = new URL(fullUrl);
             urlObj.search = '';
             urlObj.hash = '';
             
-            // Get the actual group ID/name from the path
-            const pathParts = urlObj.pathname.split('/');
-            if (pathParts.length >= 3 && pathParts[1] === 'groups') {
-              // Keep only the base group path without trailing elements
-              const groupId = pathParts[2].split('?')[0].split('#')[0];
-              urlObj.pathname = `/groups/${groupId}`;
+            // Normalize to base group URL
+            if (urlObj.pathname.includes('/groups/')) {
+              const pathParts = urlObj.pathname.split('/');
+              if (pathParts.length >= 3 && pathParts[1] === 'groups') {
+                urlObj.pathname = `/groups/${groupId}`;
+              }
             }
             
             return { 
               name, 
               href: urlObj.toString(),
-              // Add additional metadata that might be useful
+              groupId: groupId,
               extracted: true,
               timestamp: new Date().toISOString()
             };
           } catch (e) {
-            // Fallback if URL parsing fails
+            console.error("Error parsing URL:", e);
             return { 
               name, 
-              href: fullHref,
+              href: `https://www.facebook.com/groups/${groupId}`,
+              groupId: groupId,
               extracted: true,
               timestamp: new Date().toISOString()
             };
           }
+        })
+        .filter(Boolean);
+      
+      // Remove duplicates
+      const uniqueGroups = [];
+      const seenUrls = new Set();
+      
+      for (const group of groups) {
+        if (!group) continue;
+        const url = (group as any).href;
+        if (!url) continue;
+        
+        // Check for variations of the same URL
+        const normalizedUrl = url.replace(/\/\?.*$/, '')
+                                .replace(/\/$/, '')
+                                .toLowerCase();
+        
+        if (!seenUrls.has(normalizedUrl)) {
+          seenUrls.add(normalizedUrl);
+          uniqueGroups.push(group);
         }
-        return null;
-      })
-      .filter(Boolean);
-    
-    // Remove duplicates based on href
-    const uniqueGroups = groups.reduce((acc: any[], group: any) => {
-      if (!acc.some(g => g.href === group.href)) {
-        acc.push(group);
       }
-      return acc;
-    }, []);
+      
+      console.log(`Extracted ${uniqueGroups.length} unique groups`);
+      return uniqueGroups;
+    }
     
-    console.log(`Found ${uniqueGroups.length} Facebook groups`);
+    // Initial extraction
+    const initialGroups = extractGroups();
     
-    // Send to background script
-    chrome.runtime.sendMessage({
-      type: 'FACEBOOK_GROUPS_DATA',
-      data: uniqueGroups
-    });
+    if (initialGroups.length > 0) {
+      chrome.runtime.sendMessage({
+        type: 'FACEBOOK_GROUPS_DATA',
+        data: initialGroups
+      });
+    }
     
     // Set up observer to catch dynamically loaded content
     const observer = new MutationObserver(() => {
@@ -586,7 +632,7 @@ export const useChromeExtension = () => {
     
     // Auto-scroll to load more content
     let scrollCount = 0;
-    const maxScrolls = 10;
+    const maxScrolls = 12;
     
     const scrollInterval = setInterval(() => {
       window.scrollTo(0, document.body.scrollHeight);
@@ -623,99 +669,7 @@ export const useChromeExtension = () => {
       }
     }, 2000);
     
-    // Helper function to extract groups
-    function extractGroups() {
-      // Add more aggressive selectors
-      const allLinks = Array.from(document.querySelectorAll('a[href*="/groups/"]'));
-      
-      const newGroups = allLinks
-        .map(link => {
-          const href = link.getAttribute('href');
-          if (!href) return null;
-          
-          // Filter for valid group URLs
-          if (href.includes('/groups/') && 
-              !href.includes('/feed') && 
-              !href.includes('/multiadmin') && 
-              !href.includes('/about') && 
-              !href.includes('/members')) {
-            
-            let name = '';
-            
-            // Try different strategies to find the name
-            const ariaLabel = link.getAttribute('aria-label');
-            if (ariaLabel) {
-              name = ariaLabel;
-            } else if (link.textContent) {
-              name = link.textContent.trim();
-            } else {
-              // Look in parent elements
-              let parent = link.parentElement;
-              for (let i = 0; i < 3 && parent && !name; i++) {
-                if (parent.textContent) {
-                  name = parent.textContent.trim();
-                }
-                parent = parent.parentElement;
-              }
-            }
-            
-            if (!name || name.length < 2) {
-              name = 'קבוצה ללא שם';
-            }
-            
-            // Ensure we have a full URL, not a relative one
-            let fullHref = href;
-            if (!href.startsWith('http')) {
-              fullHref = `https://www.facebook.com${href.startsWith('/') ? '' : '/'}${href}`;
-            }
-            
-            // Clean up the URL
-            try {
-              const urlObj = new URL(fullHref);
-              urlObj.search = '';
-              urlObj.hash = '';
-              
-              // Get the group ID/name from the path
-              const pathParts = urlObj.pathname.split('/');
-              if (pathParts.length >= 3 && pathParts[1] === 'groups') {
-                const groupId = pathParts[2].split('?')[0].split('#')[0];
-                urlObj.pathname = `/groups/${groupId}`;
-              }
-              
-              return { 
-                name, 
-                href: urlObj.toString(),
-                extracted: true,
-                timestamp: new Date().toISOString()
-              };
-            } catch (e) {
-              // Fallback if URL parsing fails
-              return { 
-                name, 
-                href: fullHref,
-                extracted: true,
-                timestamp: new Date().toISOString()
-              };
-            }
-          }
-          return null;
-        })
-        .filter(Boolean);
-      
-      // Remove duplicates
-      const knownUrls = new Set<string>();
-      const uniqueNewGroups = newGroups.filter((group: any) => {
-        if (knownUrls.has(group.href)) {
-          return false;
-        }
-        knownUrls.add(group.href);
-        return true;
-      });
-      
-      return uniqueNewGroups;
-    }
-    
-    return uniqueGroups.length;
+    return initialGroups.length;
   }
 
   // Function to send a test post request
@@ -859,4 +813,3 @@ export const useChromeExtension = () => {
     clearLogs
   };
 };
-
